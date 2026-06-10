@@ -1,0 +1,14 @@
+# Secretos — NUNCA subir al repo
+token.json
+credentials.json
+.streamlit/secrets.toml
+.env
+
+# Temporales
+.tmp/
+__pycache__/
+*.pyc
+
+# Excel de ejemplo con datos reales (no se usan en runtime; las plantillas van en templates/)
+TIM CD 05-06.xlsx
+Devoluciones_paris 19-05 (1).xlsx
