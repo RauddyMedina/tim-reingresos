@@ -67,7 +67,8 @@ def _read_values(rng: str) -> list[list]:
 @_cache
 def read_wms() -> dict[str, list[dict]]:
     """{entrega: [{'sku','desc','unid'}, ...]} desde BASE DE DATOS WMS."""
-    rows = _read_values(f"'{TAB_WMS}'!A2:V")
+    # Solo se usan D, J, K, L → leer hasta L (recortar a la derecha reduce memoria/payload).
+    rows = _read_values(f"'{TAB_WMS}'!A2:L")
     iD, iJ, iK, iL = _col("D"), _col("J"), _col("K"), _col("L")
     out: dict[str, list[dict]] = defaultdict(list)
     for r in rows:
@@ -94,7 +95,8 @@ def read_beetrack() -> dict[str, list[dict]]:
 
     Clave: col A (Orden). SKU=AJ, Desc=AK, Qty=AL (formato "N / N" → primer número).
     """
-    rows = _read_values(f"'{TAB_BEETRACK}'!A2:AW")
+    # Solo se usan A, AJ, AK, AL → leer hasta AL (recortar a la derecha reduce memoria/payload).
+    rows = _read_values(f"'{TAB_BEETRACK}'!A2:AL")
     iE, iAJ, iAK, iAL = _col("A"), _col("AJ"), _col("AK"), _col("AL")
     out: dict[str, list[dict]] = defaultdict(list)
     for r in rows:
@@ -123,7 +125,8 @@ def read_paris() -> dict[str, list[dict]]:
 
     sku=AZ, desc=BA, retorno = (BE == 'RETORNO').
     """
-    rows = _read_values(f"'{TAB_PARIS}'!A2:BN")
+    # Solo se usan E, AZ, BA, BE → leer hasta BE (recortar a la derecha reduce memoria/payload).
+    rows = _read_values(f"'{TAB_PARIS}'!A2:BE")
     iE, iAZ, iBA, iBE = _col("E"), _col("AZ"), _col("BA"), _col("BE")
     out: dict[str, list[dict]] = defaultdict(list)
     for r in rows:

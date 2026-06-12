@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime as dt
 import sys
+import traceback
 from pathlib import Path
 
 import streamlit as st
@@ -25,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from tools.tim_easy import build_easy
 from tools.tim_paris import build_paris
 from tools.tim_common import parse_ids
+from tools.auth_sheets import credentials_available
 from tools import db_sources
 
 st.set_page_config(page_title="TIM Reingresos", page_icon="📦", layout="centered")
@@ -156,6 +158,17 @@ st.markdown(
 st.title("📦 Generador de TIM Reingresos")
 st.caption("Ingresa los números de entrega / ID y descarga el documento con el formato listo.")
 
+# Chequeo temprano (sin red): si no hay credenciales configuradas, avisar claramente en vez de
+# fallar de forma críptica al primer uso. En Cloud esto significa que faltan los Secrets.
+if not credentials_available():
+    st.error(
+        "⚠️ La app no encuentra credenciales de Google.\n\n"
+        "En **Streamlit Cloud**: ve a *Manage app → Settings → Secrets* y carga la clave "
+        "`[google]` (client_id, client_secret, refresh_token) y `GOOGLE_SHEET_ID`.\n\n"
+        "Detalles en `README_DEPLOY.md`."
+    )
+    st.stop()
+
 
 def on_enviar():
     """Genera el TIM y limpia el campo de IDs (callback: corre antes del rerender)."""
@@ -173,7 +186,7 @@ def on_enviar():
         res["fecha"] = fecha
         st.session_state.resultado = res
     except Exception as e:  # noqa: BLE001
-        st.session_state.resultado = {"error": str(e)}
+        st.session_state.resultado = {"error": str(e), "trace": traceback.format_exc()}
     # Limpiar el campo (permitido dentro de un callback)
     st.session_state.ids_input = ""
 
@@ -212,6 +225,9 @@ res = st.session_state.get("resultado")
 if res:
     if res.get("error"):
         st.error(res["error"])
+        if res.get("trace"):
+            with st.expander("🛠️ Detalle técnico (para diagnóstico)"):
+                st.code(res["trace"], language="text")
     else:
         preview = res["preview"]
         no_enc = res["no_encontrados"]

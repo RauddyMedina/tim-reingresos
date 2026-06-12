@@ -82,6 +82,17 @@ def get_service():
     return build("sheets", "v4", credentials=creds, static_discovery=True)
 
 
+def credentials_available() -> bool:
+    """True si hay de dónde sacar credenciales (secrets en Cloud o token.json en local).
+
+    NO hace ninguna llamada de red: solo verifica que exista la fuente. Sirve para mostrar
+    un mensaje claro al inicio en vez de fallar de forma críptica al primer uso.
+    """
+    if _secrets() is not None:
+        return True
+    return (_PROJECT_ROOT / "token.json").exists()
+
+
 def get_sheet_id() -> str:
     """ID del spreadsheet desde secrets, env, o el default conocido."""
     sec = _secrets()

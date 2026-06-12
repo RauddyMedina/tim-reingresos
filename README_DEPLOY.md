@@ -72,6 +72,24 @@ Guarda los secrets y pulsa **Deploy**. Quedará un link público (p. ej.
 `https://<algo>.streamlit.app`) que puedes compartir con quien necesite generar TIMs.
 No necesitan cuenta de Google: la app usa tu token para leer el Sheet.
 
+## Si sale «Oh no. Error running app.»
+
+Esa es la pantalla genérica de Streamlit Cloud cuando **el proceso de la app se cae o no
+arranca** (no es un error de la lógica). Cómo diagnosticar, de lo más probable a lo menos:
+
+1. **App dormida / cold start (lo más común).** Streamlit Cloud duerme las apps sin tráfico;
+   al despertarlas puede mostrar "Oh no" un momento. **Recarga la página (Ctrl+F5)**. Si sigue,
+   entra a https://share.streamlit.io → tu app → **Manage app** (abajo a la derecha) →
+   **⋮ → Reboot app**. En la mayoría de los casos con esto vuelve.
+2. **Mira los logs.** En el mismo panel **Manage app** está el log en vivo. Busca:
+   - `ModuleNotFoundError` / error instalando dependencias → problema de entorno (ver punto 3).
+   - `Killed` u `Out of memory` → la app superó el límite de RAM (~1 GB) leyendo las bases.
+3. **Versión de Python.** El repo trae `.python-version` con `3.12` (la versión probada). Si lo
+   borras, Cloud usa la más nueva (3.13) y alguna dependencia puede no instalar → "Oh no".
+4. **Token OAuth caducado.** Si el proyecto de Google está en modo *Testing*, el `refresh_token`
+   caduca **a los 7 días**. Eso NO da "Oh no" (sale como error rojo dentro de la app), pero si la
+   generación falla, regenera el token (ver *Token revocado* en Notas) y repégalo en Secrets.
+
 ## Notas
 - **Caché**: los datos del Sheet se cachean 10 min. El botón "Refrescar datos" limpia
   la caché si acabas de actualizar las bases.
@@ -80,4 +98,3 @@ No necesitan cuenta de Google: la app usa tu token para leer el Sheet.
   `refresh_token` nuevo en los Secrets de Streamlit.
 - **Plantillas**: el formato sale de `TimReingresos/templates/*.xlsx` (derivados de los
   ejemplos, con logos y estilos). Si cambia el formato oficial, regenera esas plantillas.
-```
