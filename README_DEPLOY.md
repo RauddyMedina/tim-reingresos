@@ -21,7 +21,7 @@ secrets). Abre http://localhost:8501.
 
 ## Desplegar en Streamlit Community Cloud (link público, no local)
 
-### 1. Subir el código a un repo **privado** de GitHub
+### 1. Subir el código a GitHub
 Sube **solo** la carpeta `TimReingresos/` (o el repo completo). El `.gitignore` ya
 excluye `token.json`, `credentials.json` y `secrets.toml` — **no deben subirse nunca**.
 
@@ -34,8 +34,11 @@ git remote add origin https://github.com/<usuario>/<repo>.git
 git push -u origin main
 ```
 
-> El repo debe ser **privado**: aunque los secretos no van en el código, las rutas y
-> la lógica de negocio no deberían ser públicas.
+> **Visibilidad del repo:** el repo es **público** y no contiene secretos (solo
+> placeholders) — así Streamlit Cloud lo clona sin permisos especiales. Si lo vuelves
+> **privado**, Streamlit pierde acceso y la app cae con "Oh no. Error running app.";
+> en ese caso debes instalar la **GitHub App de Streamlit** (github.com → Settings →
+> Applications → Installed GitHub Apps) con acceso al repo, y luego Reboot.
 
 ### 2. Crear la app en Streamlit Cloud
 1. Entra a https://share.streamlit.io → **New app**.
@@ -47,7 +50,7 @@ En la pantalla de la app → **Settings → Secrets**, pega esto (formato TOML),
 reemplazando los valores con los reales:
 
 ```toml
-GOOGLE_SHEET_ID = "1tHffZ6xU7dBuqS4w0vPW6H8tBy76uUBCu-XylrylZZo"
+GOOGLE_SHEET_ID = "EL_ID_DE_TU_SPREADSHEET"  # el de la URL del Google Sheet
 
 [google]
 client_id     = "...apps.googleusercontent.com"
@@ -77,6 +80,10 @@ No necesitan cuenta de Google: la app usa tu token para leer el Sheet.
 Esa es la pantalla genérica de Streamlit Cloud cuando **el proceso de la app se cae o no
 arranca** (no es un error de la lógica). Cómo diagnosticar, de lo más probable a lo menos:
 
+0. **`Failed to download the sources for repository` en el log** (fue la causa real en
+   jun-2026): Streamlit no puede clonar el repo. Pasa cuando el repo se vuelve **privado**
+   sin que la GitHub App de Streamlit tenga acceso. Solución: repo público, o instalar la
+   GitHub App de Streamlit con acceso al repo (ver nota de visibilidad arriba) + Reboot.
 1. **App dormida / cold start (lo más común).** Streamlit Cloud duerme las apps sin tráfico;
    al despertarlas puede mostrar "Oh no" un momento. **Recarga la página (Ctrl+F5)**. Si sigue,
    entra a https://share.streamlit.io → tu app → **Manage app** (abajo a la derecha) →

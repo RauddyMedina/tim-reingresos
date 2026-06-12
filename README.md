@@ -81,8 +81,10 @@ app.py  ──►  tools/db_sources.py  ──►  Google Sheet (pestañas WMS /
   - **Aviso de reparación de Excel** al abrir el archivo: causado por `firstSheet` fuera de
     rango en la plantilla → se normaliza la vista del libro (`firstSheet = 0`).
 - **Despliegue:** GitHub + **Streamlit Community Cloud**, con autenticación **headless**
-  vía `refresh_token` en `st.secrets`. El repo se publicó temporalmente para poder conectar
-  Streamlit (su OAuth no veía repos privados) y luego se volvió **privado**.
+  vía `refresh_token` en `st.secrets`. El repo es **público** (no contiene secretos, solo
+  placeholders): Streamlit Cloud lo clona sin permisos especiales. ⚠️ Si se vuelve privado,
+  Streamlit pierde acceso y la app muere con "Oh no. Error running app." — para tenerlo
+  privado hay que instalar la GitHub App de Streamlit con acceso al repo.
 
 ---
 
