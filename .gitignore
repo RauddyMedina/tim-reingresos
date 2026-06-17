@@ -1,6 +1,7 @@
 # Secretos — NUNCA subir al repo
 token.json
 credentials.json
+service_account.json
 .streamlit/secrets.toml
 .env
 

@@ -163,8 +163,8 @@ st.caption("Ingresa los números de entrega / ID y descarga el documento con el 
 if not credentials_available():
     st.error(
         "⚠️ La app no encuentra credenciales de Google.\n\n"
-        "En **Streamlit Cloud**: ve a *Manage app → Settings → Secrets* y carga la clave "
-        "`[google]` (client_id, client_secret, refresh_token) y `GOOGLE_SHEET_ID`.\n\n"
+        "En **Streamlit Cloud**: ve a *Manage app → Settings → Secrets* y carga el bloque "
+        "`[gcp_service_account]` (la cuenta de servicio) y `GOOGLE_SHEET_ID`.\n\n"
         "Detalles en `README_DEPLOY.md`."
     )
     st.stop()

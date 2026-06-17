@@ -1,20 +1,35 @@
 """
 auth_sheets.py
 ==============
-Cliente autenticado de Google Sheets que funciona TANTO en Streamlit Cloud
-(credenciales en st.secrets) COMO en local (token.json/credentials.json del
-proyecto principal).
+Cliente autenticado de Google Sheets (solo lectura) mediante **cuenta de
+servicio**. Funciona TANTO en Streamlit Cloud (llave en st.secrets) COMO en
+local (archivo service_account.json).
 
-En el servidor NO se abre browser: solo se refresca el token con el
-refresh_token. Por eso el flujo OAuth de usuario sirve headless.
+Por qué cuenta de servicio y no OAuth de usuario:
+    El flujo OAuth de usuario guardaba un refresh_token en los secrets. Con la
+    pantalla de consentimiento en modo "Testing", Google caduca ese token cada
+    7 días → el app moría con `invalid_grant: Token has been expired or revoked`.
+    La llave de una cuenta de servicio NO caduca, así que esto no vuelve a pasar.
 
-Secrets esperados (st.secrets):
+El app SOLO lee el Sheet (3 pestañas), por eso el scope es de solo lectura y a
+la cuenta de servicio le basta con acceso de lector al spreadsheet.
+
+Secrets esperados en Streamlit Cloud (st.secrets):
     GOOGLE_SHEET_ID = "..."
-    [google]
+    [gcp_service_account]
+    type = "service_account"
+    project_id = "..."
+    private_key_id = "..."
+    private_key = "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
+    client_email = "...@....iam.gserviceaccount.com"
     client_id = "..."
-    client_secret = "..."
-    refresh_token = "..."
     token_uri = "https://oauth2.googleapis.com/token"
+    ...
+
+En local, la llave se busca (en este orden):
+    1. env GOOGLE_SERVICE_ACCOUNT_FILE
+    2. TimReingresos/service_account.json
+    3. ../scaneador/service_account.json   (reusa la llave existente)
 """
 
 from __future__ import annotations
@@ -22,89 +37,93 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-_TOKEN_URI = "https://oauth2.googleapis.com/token"
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-# Raíz del proyecto principal (un nivel arriba de TimReingresos/)
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+# Raíces para localizar la llave en local.
+_THIS_DIR = Path(__file__).resolve().parent          # TimReingresos/tools
+_APP_ROOT = _THIS_DIR.parent                          # TimReingresos
+_WORKSPACE_ROOT = _APP_ROOT.parent                    # carpeta que contiene TimReingresos/ y scaneador/
+
+# Rutas candidatas para el archivo de cuenta de servicio (orden de prioridad).
+_SA_FILE_CANDIDATES = [
+    _APP_ROOT / "service_account.json",
+    _WORKSPACE_ROOT / "scaneador" / "service_account.json",
+]
 
 
 def _secrets():
-    """Devuelve st.secrets si Streamlit está disponible y tiene secrets, si no None."""
+    """Devuelve st.secrets si Streamlit está disponible y tiene la llave, si no None."""
     try:
         import streamlit as st
-        # acceder fuerza la carga; si no hay secrets lanza/queda vacío
-        if "google" in st.secrets:
+        if "gcp_service_account" in st.secrets:
             return st.secrets
     except Exception:
         pass
     return None
 
 
-def _creds_from_secrets(sec) -> Credentials:
-    g = sec["google"]
-    creds = Credentials(
-        token=None,
-        refresh_token=g["refresh_token"],
-        client_id=g["client_id"],
-        client_secret=g["client_secret"],
-        token_uri=g.get("token_uri", _TOKEN_URI),
-        scopes=SCOPES,
-    )
-    creds.refresh(Request())
-    return creds
+def _sa_file_path() -> Path | None:
+    """Ruta a la llave de cuenta de servicio en local, o None si no hay ninguna."""
+    env = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
+    if env and Path(env).exists():
+        return Path(env)
+    for p in _SA_FILE_CANDIDATES:
+        if p.exists():
+            return p
+    return None
 
 
-def _creds_from_local() -> Credentials:
-    """Reusa el token.json del proyecto principal (modo local)."""
-    token_path = _PROJECT_ROOT / "token.json"
-    if not token_path.exists():
+def _creds():
+    """Credenciales de cuenta de servicio: desde st.secrets (Cloud) o archivo (local)."""
+    sec = _secrets()
+    if sec is not None:
+        info = dict(sec["gcp_service_account"])
+        return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+
+    path = _sa_file_path()
+    if path is None:
         raise FileNotFoundError(
-            f"No hay credenciales: ni st.secrets['google'] ni {token_path}. "
-            "En local corre primero la autenticación del proyecto principal "
-            "(tools/auth_google.py) para generar token.json."
+            "No hay credenciales de cuenta de servicio: ni st.secrets['gcp_service_account'] "
+            f"ni un service_account.json en {[str(p) for p in _SA_FILE_CANDIDATES]}. "
+            "En Streamlit Cloud pega el bloque [gcp_service_account] en Settings → Secrets."
         )
-    creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
-    if not creds.valid and creds.refresh_token:
-        creds.refresh(Request())
-        token_path.write_text(creds.to_json())
-    return creds
+    return service_account.Credentials.from_service_account_file(str(path), scopes=SCOPES)
 
 
 def get_service():
     """Servicio autenticado de Sheets (cloud o local)."""
-    sec = _secrets()
-    creds = _creds_from_secrets(sec) if sec else _creds_from_local()
-    return build("sheets", "v4", credentials=creds, static_discovery=True)
+    return build("sheets", "v4", credentials=_creds(), static_discovery=True)
 
 
 def credentials_available() -> bool:
-    """True si hay de dónde sacar credenciales (secrets en Cloud o token.json en local).
+    """True si hay de dónde sacar credenciales (secrets en Cloud o archivo SA en local).
 
     NO hace ninguna llamada de red: solo verifica que exista la fuente. Sirve para mostrar
     un mensaje claro al inicio en vez de fallar de forma críptica al primer uso.
     """
     if _secrets() is not None:
         return True
-    return (_PROJECT_ROOT / "token.json").exists()
+    return _sa_file_path() is not None
 
 
 def get_sheet_id() -> str:
     """ID del spreadsheet desde secrets, env, o el default conocido."""
-    sec = _secrets()
-    if sec and "GOOGLE_SHEET_ID" in sec:
-        return sec["GOOGLE_SHEET_ID"]
+    try:
+        import streamlit as st
+        if "GOOGLE_SHEET_ID" in st.secrets:
+            return st.secrets["GOOGLE_SHEET_ID"]
+    except Exception:
+        pass
     env = os.getenv("GOOGLE_SHEET_ID")
     if env:
         return env
-    # Fallback: .env del proyecto principal
+    # Fallback: .env del workspace (proyecto principal)
     try:
         from dotenv import load_dotenv
-        load_dotenv(_PROJECT_ROOT / ".env")
+        load_dotenv(_WORKSPACE_ROOT / ".env")
         if os.getenv("GOOGLE_SHEET_ID"):
             return os.getenv("GOOGLE_SHEET_ID")
     except Exception:

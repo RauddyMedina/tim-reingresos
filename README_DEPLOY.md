@@ -16,8 +16,9 @@ py -3.12 -m pip install -r TimReingresos/requirements.txt
 py -3.12 -m streamlit run TimReingresos/app.py
 ```
 
-En local usa el `token.json` del proyecto principal (no hace falta configurar
-secrets). Abre http://localhost:8501.
+En local usa la **cuenta de servicio** `service_account.json` (la busca en
+`TimReingresos/service_account.json` o, como fallback, en `../scaneador/service_account.json`).
+No hace falta configurar secrets. Abre http://localhost:8501.
 
 ## Desplegar en Streamlit Community Cloud (link público, no local)
 
@@ -45,35 +46,40 @@ git push -u origin main
 2. Repo: tu repo privado · Branch: `main` · **Main file path**: `TimReingresos/app.py`.
 3. (No despliegues aún — primero carga los Secrets.)
 
-### 3. Cargar los Secrets
-En la pantalla de la app → **Settings → Secrets**, pega esto (formato TOML),
-reemplazando los valores con los reales:
+### 3. Cargar los Secrets (cuenta de servicio)
+En la pantalla de la app → **Settings → Secrets**, pega el `GOOGLE_SHEET_ID` y el
+bloque `[gcp_service_account]` (formato TOML). Plantilla en
+`.streamlit/secrets.toml.example`:
 
 ```toml
 GOOGLE_SHEET_ID = "EL_ID_DE_TU_SPREADSHEET"  # el de la URL del Google Sheet
 
-[google]
-client_id     = "...apps.googleusercontent.com"
-client_secret = "..."
-refresh_token = "..."
-token_uri     = "https://oauth2.googleapis.com/token"
+[gcp_service_account]
+type = "service_account"
+project_id = "..."
+private_key_id = "..."
+private_key = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+client_email = "...@....iam.gserviceaccount.com"
+client_id = "..."
+token_uri = "https://oauth2.googleapis.com/token"
+# (+ auth_uri, auth_provider_x509_cert_url, client_x509_cert_url, universe_domain)
 ```
 
-**De dónde salen los valores** (en el equipo local, raíz del proyecto principal):
-- `client_id` y `client_secret` → del archivo `credentials.json`
-  (dentro de `installed.client_id` / `installed.client_secret`).
-- `refresh_token` → del archivo `token.json` (campo `refresh_token`).
+**De dónde salen los valores**: del archivo `service_account.json` de la cuenta de
+servicio. Cada campo del JSON es una línea del bloque TOML.
 
-Para verlos rápido:
-```powershell
-py -3.12 -c "import json; d=json.load(open('credentials.json'))['installed']; print('client_id=',d['client_id']); print('client_secret=',d['client_secret'])"
-py -3.12 -c "import json; print('refresh_token=', json.load(open('token.json'))['refresh_token'])"
-```
+**Requisito (una sola vez):** la cuenta de servicio (`client_email`) debe tener
+acceso de **lector** al spreadsheet. Compártelo desde Google Sheets con ese email.
+
+> **Por qué cuenta de servicio:** antes se usaba un `refresh_token` de OAuth de
+> usuario que, con el proyecto en modo *Testing*, caducaba **a los 7 días** y tiraba
+> `invalid_grant: Token has been expired or revoked`. La llave de cuenta de servicio
+> **no caduca** → el problema no se repite.
 
 ### 4. Deploy
 Guarda los secrets y pulsa **Deploy**. Quedará un link público (p. ej.
 `https://<algo>.streamlit.app`) que puedes compartir con quien necesite generar TIMs.
-No necesitan cuenta de Google: la app usa tu token para leer el Sheet.
+No necesitan cuenta de Google: la app usa la cuenta de servicio para leer el Sheet.
 
 ## Si sale «Oh no. Error running app.»
 
@@ -93,15 +99,16 @@ arranca** (no es un error de la lógica). Cómo diagnosticar, de lo más probabl
    - `Killed` u `Out of memory` → la app superó el límite de RAM (~1 GB) leyendo las bases.
 3. **Versión de Python.** El repo trae `.python-version` con `3.12` (la versión probada). Si lo
    borras, Cloud usa la más nueva (3.13) y alguna dependencia puede no instalar → "Oh no".
-4. **Token OAuth caducado.** Si el proyecto de Google está en modo *Testing*, el `refresh_token`
-   caduca **a los 7 días**. Eso NO da "Oh no" (sale como error rojo dentro de la app), pero si la
-   generación falla, regenera el token (ver *Token revocado* en Notas) y repégalo en Secrets.
+4. **Auth del Sheet.** Desde jun-2026 se usa **cuenta de servicio** (`[gcp_service_account]`),
+   cuya llave **no caduca** — ya no aplica el problema del token OAuth a 7 días. Si igual ves
+   `invalid_grant` o `403/PERMISSION_DENIED`, revisa que el bloque esté completo en Secrets y que
+   el `client_email` tenga acceso de lector al spreadsheet.
 
 ## Notas
 - **Caché**: los datos del Sheet se cachean 10 min. El botón "Refrescar datos" limpia
   la caché si acabas de actualizar las bases.
-- **Token revocado**: si Google invalida el `refresh_token`, regenéralo en local
-  (`py -3.12 tools/auth_google.py` en el proyecto principal) y vuelve a pegar el
-  `refresh_token` nuevo en los Secrets de Streamlit.
+- **Auth**: usa cuenta de servicio (`service_account.json` / bloque
+  `[gcp_service_account]` en Secrets). La llave no caduca; solo se rompería si alguien
+  borra/rota la cuenta de servicio o le quita el acceso de lector al spreadsheet.
 - **Plantillas**: el formato sale de `TimReingresos/templates/*.xlsx` (derivados de los
   ejemplos, con logos y estilos). Si cambia el formato oficial, regenera esas plantillas.
