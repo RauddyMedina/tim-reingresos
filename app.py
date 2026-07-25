@@ -27,7 +27,11 @@ from tools.tim_easy import build_easy
 from tools.tim_paris import build_paris
 from tools.tim_common import parse_ids
 from tools.auth_sheets import credentials_available
+from tools.push_reingresos import push_reingresos
 from tools import db_sources
+
+# URL del tablero donde el bodeguero rebaja los reingresos con foto (ver proyecto_reingresos/)
+REINGRESOS_URL = "https://rauddymedina.github.io/reingresos-tim/"
 
 st.set_page_config(page_title="TIM Reingresos", page_icon="📦", layout="centered")
 
@@ -253,5 +257,15 @@ if res:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 type="primary",
             )
+
+            if st.button("📤 Enviar a reingresos", help="Manda estas filas al tablero donde el bodeguero las rebaja con foto"):
+                try:
+                    n = push_reingresos(res["cliente"], res["fecha"], preview)
+                    st.success(
+                        f"{n} línea(s) enviadas al tablero de reingresos. "
+                        f"Ábrelo en [{REINGRESOS_URL}]({REINGRESOS_URL})."
+                    )
+                except Exception as e:  # noqa: BLE001
+                    st.error(f"No se pudo enviar a reingresos: {e}")
         else:
             st.error("No se generó ninguna fila. Revisa los IDs ingresados.")

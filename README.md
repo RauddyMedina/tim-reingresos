@@ -22,6 +22,11 @@ para usar. Reemplaza el llenado manual fila por fila.
 5. Revisa la tabla y pulsa **⬇️ Descargar Excel**.
 6. Si actualizaste las bases del Sheet hace menos de 10 minutos, usa **🔄 Refrescar datos**
    antes de generar (la app cachea los datos del Sheet 10 min).
+7. (Opcional) Pulsa **📤 Enviar a reingresos** para mandar esas mismas filas al
+   [tablero de reingresos](https://rauddymedina.github.io/reingresos-tim/), donde el
+   bodeguero las rebaja dejando foto de cada producto y del palet armado. Ver
+   `proyecto_reingresos/INSTRUCCIONES-SETUP.md` (carpeta hermana) para el detalle de esa
+   parte.
 
 Lo que la app completa automáticamente:
 - **Easy** (formato *TIM Devolución Logística Inversa*): COD. PRODUCTO, DESCRIPCIÓN y UN.
@@ -55,6 +60,7 @@ app.py  ──►  tools/db_sources.py  ──►  Google Sheet (pestañas WMS /
 | `tools/tim_easy.py` | Arma el Excel de Easy sobre `templates/tim_easy_template.xlsx`. Agrupa por SKU sumando unidades. |
 | `tools/tim_paris.py` | Arma el Excel de Paris sobre `templates/devoluciones_paris_template.xlsx`. Una fila por línea de producto, dedup por nombre. |
 | `tools/tim_common.py` | Utilidades compartidas (parseo de IDs, estilos, headers). |
+| `tools/push_reingresos.py` | Escribe las filas del preview en la pestaña `reingresos` del Sheet (botón "Enviar a reingresos"). |
 | `templates/*.xlsx` | Formatos oficiales con logos y estilos (se preservan). |
 | `workflows/*.md` | SOPs (instrucciones) de cada generación. |
 

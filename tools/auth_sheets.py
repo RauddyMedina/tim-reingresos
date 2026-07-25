@@ -1,9 +1,9 @@
 """
 auth_sheets.py
 ==============
-Cliente autenticado de Google Sheets (solo lectura) mediante **cuenta de
-servicio**. Funciona TANTO en Streamlit Cloud (llave en st.secrets) COMO en
-local (archivo service_account.json).
+Cliente autenticado de Google Sheets mediante **cuenta de servicio**. Funciona
+TANTO en Streamlit Cloud (llave en st.secrets) COMO en local (archivo
+service_account.json).
 
 Por qué cuenta de servicio y no OAuth de usuario:
     El flujo OAuth de usuario guardaba un refresh_token en los secrets. Con la
@@ -11,8 +11,10 @@ Por qué cuenta de servicio y no OAuth de usuario:
     7 días → el app moría con `invalid_grant: Token has been expired or revoked`.
     La llave de una cuenta de servicio NO caduca, así que esto no vuelve a pasar.
 
-El app SOLO lee el Sheet (3 pestañas), por eso el scope es de solo lectura y a
-la cuenta de servicio le basta con acceso de lector al spreadsheet.
+El app lee las bases (WMS/Beetrack/Paris) y además ESCRIBE en la pestaña
+`reingresos` (botón "Enviar a reingresos", ver tools/push_reingresos.py), por
+eso el scope es de lectura+escritura y la cuenta de servicio necesita acceso
+de EDITOR (no solo lector) al spreadsheet.
 
 Secrets esperados en Streamlit Cloud (st.secrets):
     GOOGLE_SHEET_ID = "..."
@@ -40,7 +42,7 @@ from pathlib import Path
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 # Raíces para localizar la llave en local.
 _THIS_DIR = Path(__file__).resolve().parent          # TimReingresos/tools
