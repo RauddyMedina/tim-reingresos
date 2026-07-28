@@ -15,6 +15,7 @@ API:
 from __future__ import annotations
 
 import datetime as dt
+import re
 from io import BytesIO
 
 import openpyxl
@@ -71,9 +72,56 @@ def _aggregate(ids: list[str]):
     return filas, no_encontrados
 
 
+# Un retiro (cambio anulado) trae en su propia descripción el N° de la entrega
+# original entre paréntesis, ej. "CAMBIO COMEDOR 8S CLARICE 136X136X77 (2918619547)".
+_REF_RE = re.compile(r"\((\d{6,})\)\s*$")
+
+
+def _ref_entrega(desc: str) -> str | None:
+    """N° de entrega referenciado al final de la descripción de un retiro, si hay."""
+    m = _REF_RE.search(desc or "")
+    return m.group(1) if m else None
+
+
+def _es_retiro(desc: str) -> bool:
+    # ponytail: heurístico por texto en la descripción (así es como el equipo ya
+    # identifica un cambio/retiro a simple vista). Techo: un producto real cuyo
+    # nombre contenga literalmente "cambio"/"retiro" se marcaría como retiro por
+    # error. Si eso llega a pasar, subir a un patrón más estricto (ej. exigir
+    # además el paréntesis con N° al final, que ya valida _ref_entrega).
+    up = (desc or "").upper()
+    return "CAMBIO" in up or "RETIRO" in up
+
+
+def _merge_cambios(filas: list[dict]) -> list[dict]:
+    """Fusiona cada retiro (cambio anulado) con la fila de su entrega original.
+
+    Se emparejan solo cuando la descripción del retiro referencia OTRA entrega que
+    también está en `filas` (evita falsos positivos: un retiro que se referencia a
+    sí mismo, o un "RETIRO CD ..." sin N° de entrega, quedan sueltos como antes).
+    La fila fusionada conserva sku/un de la ENTREGA y toma la descripción del RETIRO
+    (ya trae "CAMBIO"/"RETIRO" + el N° entre paréntesis).
+    """
+    por_entrega = {f["entrega"]: f for f in filas if not _es_retiro(f["desc"])}
+    resultado: list[dict] = []
+    for f in filas:
+        if not _es_retiro(f["desc"]):
+            resultado.append(f)
+            continue
+        ref = _ref_entrega(f["desc"])
+        objetivo = por_entrega.get(ref) if ref and ref != f["entrega"] else None
+        if objetivo is None:
+            resultado.append(f)  # retiro huérfano/auto-referenciado: queda solo
+            continue
+        objetivo["entrega"] = f"{objetivo['entrega']} - {f['entrega']}"
+        objetivo["desc"] = f["desc"]
+    return resultado
+
+
 def build_easy(ids: list[str], fecha: dt.date | None = None) -> dict:
     fecha = fecha or dt.date.today()
     filas, no_encontrados = _aggregate(ids)
+    filas = _merge_cambios(filas)
 
     wb = openpyxl.load_workbook(TEMPLATE)
     ws = wb.active

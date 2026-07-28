@@ -5,3 +5,4 @@ google-auth-oauthlib>=1.2
 openpyxl>=3.1
 pandas>=2.0
 # rebuild 2026-07-24: forzar entorno limpio en Streamlit Cloud (scope Sheets read-write)
+# rebuild 2026-07-28: forzar entorno limpio (fusion entrega+retiro en TIM Easy)
