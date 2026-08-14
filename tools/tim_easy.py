@@ -101,11 +101,17 @@ def _merge_cambios(filas: list[dict]) -> list[dict]:
     sí mismo, o un "RETIRO CD ..." sin N° de entrega, quedan sueltos como antes).
     La fila fusionada conserva sku/un de la ENTREGA y toma la descripción del RETIRO
     (ya trae "CAMBIO"/"RETIRO" + el N° entre paréntesis).
+
+    La clasificación retiro/entrega se hace UNA sola vez antes de mutar nada: al fusionar
+    se sobreescribe la desc del destino con la del retiro, así que reclasificar sobre la
+    marcha haría que el destino pareciera retiro, se fusionara consigo mismo y su fila se
+    perdiera (pasaba cuando el retiro venía antes que su entrega en la lista).
     """
-    por_entrega = {f["entrega"]: f for f in filas if not _es_retiro(f["desc"])}
+    clasificadas = [(f, _es_retiro(f["desc"])) for f in filas]
+    por_entrega = {f["entrega"]: f for f, retiro in clasificadas if not retiro}
     resultado: list[dict] = []
-    for f in filas:
-        if not _es_retiro(f["desc"]):
+    for f, retiro in clasificadas:
+        if not retiro:
             resultado.append(f)
             continue
         ref = _ref_entrega(f["desc"])
@@ -121,6 +127,7 @@ def _merge_cambios(filas: list[dict]) -> list[dict]:
 def build_easy(ids: list[str], fecha: dt.date | None = None) -> dict:
     fecha = fecha or dt.date.today()
     filas, no_encontrados = _aggregate(ids)
+    n_antes = len(filas)
     filas = _merge_cambios(filas)
 
     wb = openpyxl.load_workbook(TEMPLATE)
@@ -187,6 +194,7 @@ def build_easy(ids: list[str], fecha: dt.date | None = None) -> dict:
             for i, f in enumerate(filas)
         ],
         "no_encontrados": no_encontrados,
+        "fusionados": n_antes - len(filas),  # retiros absorbidos por su entrega original
     }
 
 

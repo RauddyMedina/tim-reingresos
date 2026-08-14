@@ -55,4 +55,19 @@ filas6 = [{"entrega": "2918111111", "sku": "SKUX", "desc": "PRODUCTO NORMAL", "u
 out6 = _merge_cambios(filas6)
 assert out6 == filas6, "entrega sin retiro debe quedar intacta"
 
+# Regresion 2026-08-14: el RETIRO viene ANTES que su entrega en la lista pegada.
+# Antes se perdia la fila entera (el destino, ya mutado con la desc del retiro, se
+# reclasificaba como retiro y se fusionaba consigo mismo). Caso real del Sheet.
+filas7 = [
+    {"entrega": "385575125", "sku": "385575125",
+     "desc": "CAMBIO COMODA 6CJ GRECCO 120X69X45CM BLANCO (2918937046)", "un": 0},
+    {"entrega": "2918937046", "sku": "1492906",
+     "desc": "COMODA 6CJ GRECCO 120X69X45CM BLANCO", "un": 1},
+]
+out7 = _merge_cambios(filas7)
+assert len(out7) == 1, f"la fila fusionada se perdio: {out7}"
+assert out7[0]["entrega"] == "2918937046 - 385575125", out7[0]["entrega"]
+assert out7[0]["sku"] == "1492906"  # sku de la ENTREGA
+assert out7[0]["un"] == 1
+
 print("OK - todos los checks de _merge_cambios pasaron")

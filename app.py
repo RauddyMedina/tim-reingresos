@@ -243,9 +243,13 @@ if res:
             )
 
         if preview:
+            fus = res.get("fusionados", 0)
+            detalle = (
+                f"\n\n({fus} cambio(s) fusionado(s) con su entrega original)" if fus else ""
+            )
             st.success(
                 f"{len(preview)} fila(s) generadas para "
-                f"{res['n_ids'] - len(no_enc)} entrega(s)."
+                f"{res['n_ids'] - len(no_enc)} entrega(s)." + detalle
             )
             st.dataframe(preview, use_container_width=True, hide_index=True)
 
