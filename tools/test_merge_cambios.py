@@ -70,4 +70,28 @@ assert out7[0]["entrega"] == "2918937046 - 385575125", out7[0]["entrega"]
 assert out7[0]["sku"] == "1492906"  # sku de la ENTREGA
 assert out7[0]["un"] == 1
 
+# Entrega con VARIOS SKU + su cambio: deben aparecer TODOS los SKU, cada uno con su
+# propio nombre de producto, y el N° del retiro en las dos filas.
+filas8 = [
+    {"entrega": "2918037663", "sku": "1304697", "desc": "ESCRITORIO C/3 CAJONES 136X45X75", "un": 1},
+    {"entrega": "2918037663", "sku": "1351410", "desc": "CLOSET 6PTS/1CJ/1ZAP 138X40X177", "un": 1},
+    {"entrega": "385000003", "sku": "385000003",
+     "desc": "CAMBIO ESCRITORIO C/3 CAJONES 136X45X75 (2918037663)", "un": 0},
+]
+out8 = _merge_cambios(filas8)
+assert len(out8) == 2, f"esperaba las 2 filas de SKU, hay {len(out8)}"
+assert [f["sku"] for f in out8] == ["1304697", "1351410"], [f["sku"] for f in out8]
+assert all(f["entrega"] == "2918037663 - 385000003" for f in out8), [f["entrega"] for f in out8]
+# con varios SKU NO se pisa la descripcion: cada producto conserva su nombre
+assert out8[0]["desc"] == "ESCRITORIO C/3 CAJONES 136X45X75"
+assert out8[1]["desc"] == "CLOSET 6PTS/1CJ/1ZAP 138X40X177"
+
+# "RECAMBIO" es parte del nombre de un producto real, no un retiro: no debe fusionarse
+# ni sacar la fila de la lista de destinos.
+filas9 = [
+    {"entrega": "2918222222", "sku": "9001", "desc": "RECAMBIO FILTRO AGUA 3 ETAPAS", "un": 1},
+]
+out9 = _merge_cambios(filas9)
+assert out9 == filas9, "RECAMBIO es un producto, no un retiro"
+
 print("OK - todos los checks de _merge_cambios pasaron")

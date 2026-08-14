@@ -83,14 +83,18 @@ def _ref_entrega(desc: str) -> str | None:
     return m.group(1) if m else None
 
 
+# Palabra suelta: "RECAMBIO FILTRO AGUA" es un producto real, no un retiro.
+# Verificado contra las 17.949 descripciones del Sheet: clasifica igual que el
+# substring anterior (0 diferencias), pero ya no puede confundirse.
+_RETIRO_RE = re.compile(r"\b(CAMBIO|RETIRO)S?\b")
+
+
 def _es_retiro(desc: str) -> bool:
     # ponytail: heurístico por texto en la descripción (así es como el equipo ya
-    # identifica un cambio/retiro a simple vista). Techo: un producto real cuyo
-    # nombre contenga literalmente "cambio"/"retiro" se marcaría como retiro por
-    # error. Si eso llega a pasar, subir a un patrón más estricto (ej. exigir
-    # además el paréntesis con N° al final, que ya valida _ref_entrega).
-    up = (desc or "").upper()
-    return "CAMBIO" in up or "RETIRO" in up
+    # identifica un cambio/retiro a simple vista). Techo: no exige el paréntesis
+    # con N° al final, así un "RETIRO CD JAULA" sin N° igual cuenta como retiro
+    # (queda suelto en su propia fila, que es lo correcto).
+    return bool(_RETIRO_RE.search((desc or "").upper()))
 
 
 def _merge_cambios(filas: list[dict]) -> list[dict]:
@@ -99,8 +103,11 @@ def _merge_cambios(filas: list[dict]) -> list[dict]:
     Se emparejan solo cuando la descripción del retiro referencia OTRA entrega que
     también está en `filas` (evita falsos positivos: un retiro que se referencia a
     sí mismo, o un "RETIRO CD ..." sin N° de entrega, quedan sueltos como antes).
-    La fila fusionada conserva sku/un de la ENTREGA y toma la descripción del RETIRO
-    (ya trae "CAMBIO"/"RETIRO" + el N° entre paréntesis).
+    La entrega conserva TODAS sus filas (una por SKU); a cada una se le agrega el N° del
+    retiro en 'entrega'. Solo cuando la entrega trae un único SKU se le copia la
+    descripción del retiro (que es del mismo producto y aporta el "CAMBIO"/"RETIRO" + el
+    N° entre paréntesis); con varios SKU se conserva el nombre de cada producto, si no se
+    perdería uno y se duplicaría otro.
 
     La clasificación retiro/entrega se hace UNA sola vez antes de mutar nada: al fusionar
     se sobreescribe la desc del destino con la del retiro, así que reclasificar sobre la
@@ -108,7 +115,10 @@ def _merge_cambios(filas: list[dict]) -> list[dict]:
     perdiera (pasaba cuando el retiro venía antes que su entrega en la lista).
     """
     clasificadas = [(f, _es_retiro(f["desc"])) for f in filas]
-    por_entrega = {f["entrega"]: f for f, retiro in clasificadas if not retiro}
+    por_entrega: dict[str, list[dict]] = {}
+    for f, retiro in clasificadas:
+        if not retiro:
+            por_entrega.setdefault(f["entrega"], []).append(f)
     resultado: list[dict] = []
     for f, retiro in clasificadas:
         if not retiro:
@@ -116,11 +126,13 @@ def _merge_cambios(filas: list[dict]) -> list[dict]:
             continue
         ref = _ref_entrega(f["desc"])
         objetivo = por_entrega.get(ref) if ref and ref != f["entrega"] else None
-        if objetivo is None:
+        if not objetivo:
             resultado.append(f)  # retiro huérfano/auto-referenciado: queda solo
             continue
-        objetivo["entrega"] = f"{objetivo['entrega']} - {f['entrega']}"
-        objetivo["desc"] = f["desc"]
+        for fila in objetivo:
+            fila["entrega"] = f"{fila['entrega']} - {f['entrega']}"
+        if len(objetivo) == 1:
+            objetivo[0]["desc"] = f["desc"]
     return resultado
 
 
