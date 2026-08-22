@@ -176,6 +176,10 @@ if not credentials_available():
 
 def on_enviar():
     """Genera el TIM y limpia el campo de IDs (callback: corre antes del rerender)."""
+    # TIM nuevo = envío nuevo: si no, el botón de reingresos queda trabado mostrando
+    # el resultado del TIM anterior.
+    st.session_state.enviado_key = None
+    st.session_state.push_msg = None
     raw = st.session_state.get("ids_input", "")
     ids = parse_ids(raw)
     if not ids:
@@ -193,6 +197,40 @@ def on_enviar():
         st.session_state.resultado = {"error": str(e), "trace": traceback.format_exc()}
     # Limpiar el campo (permitido dentro de un callback)
     st.session_state.ids_input = ""
+
+
+def _clave_envio(res: dict) -> tuple[str, str]:
+    """Identifica el TIM en pantalla, para saber si ya se envió al tablero."""
+    return (res["cliente"], res["fecha"].isoformat())
+
+
+def on_push():
+    """Envía las filas al tablero de reingresos (callback: corre antes del rerender).
+
+    El resultado se guarda en session_state en vez de pintarse con un st.success suelto:
+    ese mensaje se borraba en el rerun siguiente (por ejemplo al apretar "Descargar
+    Excel"), y sin ninguna señal de que el envío había funcionado lo natural era volver
+    a apretar. Así se duplicó un TIM 4 veces (28 líneas en vez de 7) el 2026-08-22.
+
+    La guarda de session_state solo cubre esta sesión; la defensa real contra duplicados
+    está en push_reingresos(), que deduplica contra lo que ya hay en el Sheet.
+    """
+    res = st.session_state.get("resultado") or {}
+    if not res.get("preview"):
+        return
+    clave = _clave_envio(res)
+    if st.session_state.get("enviado_key") == clave:
+        return
+    try:
+        n = push_reingresos(res["cliente"], res["fecha"], res["preview"])
+        st.session_state.enviado_key = clave
+        st.session_state.push_msg = (
+            "ok",
+            f"{n} línea(s) enviadas al tablero de reingresos."
+            if n else "Estas líneas ya estaban en el tablero: no se envió nada nuevo.",
+        )
+    except Exception as e:  # noqa: BLE001
+        st.session_state.push_msg = ("error", f"No se pudo enviar a reingresos: {e}")
 
 
 cliente = st.radio("Cliente", ["Easy", "Paris"], horizontal=True, key="cliente")
@@ -262,14 +300,19 @@ if res:
                 type="primary",
             )
 
-            if st.button("📤 Enviar a reingresos", help="Manda estas filas al tablero donde el bodeguero las rebaja con foto"):
-                try:
-                    n = push_reingresos(res["cliente"], res["fecha"], preview)
-                    st.success(
-                        f"{n} línea(s) enviadas al tablero de reingresos. "
-                        f"Ábrelo en [{REINGRESOS_URL}]({REINGRESOS_URL})."
-                    )
-                except Exception as e:  # noqa: BLE001
-                    st.error(f"No se pudo enviar a reingresos: {e}")
+            ya_enviado = st.session_state.get("enviado_key") == _clave_envio(res)
+            st.button(
+                "✅ Ya enviadas al tablero" if ya_enviado else "📤 Enviar a reingresos",
+                help="Manda estas filas al tablero donde el bodeguero las rebaja con foto",
+                on_click=on_push,
+                disabled=ya_enviado,
+            )
+            msg = st.session_state.get("push_msg")
+            if msg:
+                tipo, texto = msg
+                if tipo == "ok":
+                    st.success(f"{texto} Ábrelo en [{REINGRESOS_URL}]({REINGRESOS_URL}).")
+                else:
+                    st.error(texto)
         else:
             st.error("No se generó ninguna fila. Revisa los IDs ingresados.")
