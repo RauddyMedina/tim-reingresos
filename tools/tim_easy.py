@@ -19,6 +19,7 @@ import re
 from io import BytesIO
 
 import openpyxl
+from copy import copy
 
 from tools.db_sources import read_beetrack, read_opl, read_wms
 from tools.tim_common import TEMPLATES_DIR, copy_row_style, find_header_row
@@ -143,11 +144,39 @@ def _merge_cambios(filas: list[dict]) -> list[dict]:
     return resultado
 
 
+def agrupar_por_entrega(filas: list[dict]) -> list[dict]:
+    """[{entrega, skus, descs, uns}] — UNA entrada por documento asociado.
+
+    El TIM se llena a mano despues (Motivo, Tipo, Observaciones son por documento, no
+    por producto), asi que repetir la entrega en varias filas obliga a escribir lo
+    mismo tres veces. Pedido del dueno el 22-10: una fila por entrega, con los
+    productos apilados dentro de la celda.
+
+    Mantiene el orden en que llegaron las filas: el TIM se lee contra el palet.
+    """
+    out: dict[str, dict] = {}
+    for f in filas:
+        ent = str(f["entrega"])
+        b = out.setdefault(ent, {"entrega": f["entrega"], "skus": [],
+                                 "descs": [], "uns": []})
+        b["skus"].append(f["sku"])
+        b["descs"].append(f["desc"])
+        b["uns"].append(f["un"])
+    return list(out.values())
+
+
+def _apilar(valores: list) -> str:
+    return "\n".join("" if v is None else str(v) for v in valores)
+
+
 def build_easy(ids: list[str], fecha: dt.date | None = None) -> dict:
     fecha = fecha or dt.date.today()
     filas, no_encontrados = _aggregate(ids)
     n_antes = len(filas)
     filas = _merge_cambios(filas)
+    # El Excel lleva una fila por ENTREGA (productos apilados en la celda); el preview
+    # sigue teniendo una linea por producto, que es lo que necesita el tablero de fotos.
+    bloques = agrupar_por_entrega(filas)
 
     wb = openpyxl.load_workbook(TEMPLATE)
     ws = wb.active
@@ -178,29 +207,43 @@ def build_easy(ids: list[str], fecha: dt.date | None = None) -> dict:
     # Si hay más filas que el espacio pre-formateado, insertar filas ANTES de la
     # leyenda para que ésta (y el bloque de firmas) se desplacen sin sobrescribirse.
     capacidad = last_template_row - data_start + 1
-    if len(filas) > capacidad:
-        faltan = len(filas) - capacidad
+    if len(bloques) > capacidad:
+        faltan = len(bloques) - capacidad
         ws.insert_rows(last_template_row + 1, faltan)
         for k in range(faltan):
             copy_row_style(ws, data_start, last_template_row + 1 + k,
                            COL_RANGE[0], COL_RANGE[1])
         last_template_row += faltan
 
-    for i, f in enumerate(filas):
+    for i, b in enumerate(bloques):
         r = data_start + i
         if r > last_template_row:
             copy_row_style(ws, data_start, r, COL_RANGE[0], COL_RANGE[1])
+        n = len(b["skus"])
         ws.cell(r, COL_N).value = i + 1
         cB = ws.cell(r, COL_DOC)
-        cB.value = _num_or_str(f["entrega"])
+        cB.value = _num_or_str(b["entrega"])
         cB.number_format = "0"
-        cF = ws.cell(r, COL_COD)
-        cF.value = _num_or_str(f["sku"])
-        cF.number_format = "0"
-        ws.cell(r, COL_DESC).value = f["desc"]
-        cH = ws.cell(r, COL_UN)
-        cH.value = f["un"]
-        cH.number_format = "0"
+        # Con un solo producto se escribe el numero (asi Excel lo alinea y lo formatea
+        # como siempre); con varios va texto multilinea, que no admite formato numerico.
+        cF, cH = ws.cell(r, COL_COD), ws.cell(r, COL_UN)
+        if n == 1:
+            cF.value, cF.number_format = _num_or_str(b["skus"][0]), "0"
+            cH.value, cH.number_format = b["uns"][0], "0"
+            ws.cell(r, COL_DESC).value = b["descs"][0]
+        else:
+            cF.value = _apilar(b["skus"])
+            cH.value = _apilar(b["uns"])
+            ws.cell(r, COL_DESC).value = _apilar(b["descs"])
+            # Sin wrap_text los saltos de linea no se ven y la celda muestra una sola
+            # linea; sin la altura, Excel la deja del alto de siempre y recorta.
+            for c in (cF, cH, ws.cell(r, COL_DESC)):
+                # Sobre la COPIA y recien despues asignar: el alignment que devuelve la
+                # celda es un proxy inmutable y tocarlo directo revienta.
+                al = copy(c.alignment)
+                al.wrapText = True
+                c.alignment = al
+            ws.row_dimensions[r].height = 15 * n
 
     buf = BytesIO()
     wb.save(buf)

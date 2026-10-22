@@ -94,4 +94,33 @@ filas9 = [
 out9 = _merge_cambios(filas9)
 assert out9 == filas9, "RECAMBIO es un producto, no un retiro"
 
+# ── agrupar_por_entrega: el Excel lleva UNA fila por documento ────────────────
+# Pedido del dueno el 22-10: Motivo, Tipo y Observaciones se llenan a mano y son por
+# documento, no por producto, asi que repetir la entrega obligaba a escribir lo mismo
+# tres veces. Los productos van apilados dentro de la celda.
+from tools.tim_easy import agrupar_por_entrega  # noqa: E402
+
+tres = [
+    {"entrega": "2919636302", "sku": "1188309", "desc": "CUNA", "un": 1},
+    {"entrega": "2919636302", "sku": "1450137", "desc": "CLIP", "un": 1},
+    {"entrega": "2919636302", "sku": "1190545", "desc": "LATEX", "un": 1},
+]
+b = agrupar_por_entrega(tres)
+assert len(b) == 1, b
+assert b[0]["skus"] == ["1188309", "1450137", "1190545"], b[0]
+assert b[0]["descs"] == ["CUNA", "CLIP", "LATEX"] and b[0]["uns"] == [1, 1, 1]
+
+# Dos entregas = dos filas, y se respeta el orden en que llegaron (el TIM se lee
+# contra el palet).
+dos = tres + [{"entrega": "111", "sku": "9", "desc": "OTRO", "un": 2}]
+b2 = agrupar_por_entrega(dos)
+assert [x["entrega"] for x in b2] == ["2919636302", "111"], b2
+
+# Un solo producto sigue siendo una fila simple (se escribe como numero, no apilado).
+b3 = agrupar_por_entrega([{"entrega": "7", "sku": "9", "desc": "UNO", "un": 1}])
+assert len(b3) == 1 and b3[0]["skus"] == ["9"]
+
+assert agrupar_por_entrega([]) == []
+
+print("OK - agrupar_por_entrega")
 print("OK - todos los checks de _merge_cambios pasaron")
