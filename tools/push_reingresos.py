@@ -22,6 +22,7 @@ from __future__ import annotations
 import datetime as dt
 
 from tools.auth_sheets import get_service, get_sheet_id
+from tools.db_sources import read_opl
 
 TAB_REINGRESOS = "reingresos"
 HEADER = ["cliente", "fecha", "entrega", "sku", "producto", "un"]
@@ -77,6 +78,21 @@ def iso_fecha(v) -> str:
     return str(v).strip()[:10]
 
 
+def destino_de(entrega, cliente: str, locales: dict) -> str:
+    """A donde vuelve el reingreso: 'OPL Vina' | 'OPL Belloto' | el cliente del TIM.
+
+    La columna A de la pestana 'reingresos' es la que el tablero de fotos usa para
+    AGRUPAR los palets (grupo = cliente + fecha). Si todo lo de OPL dice 'Easy', el
+    bodeguero ve un solo palet que mezcla lo que vuelve al CD con lo que vuelve a cada
+    OPL, y lo fotografia junto aunque sean tres destinos distintos.
+
+    El `cliente` que recibe push_reingresos sigue siendo Easy/Paris: eso elige que
+    columnas leer del preview. Lo que cambia es lo que se ESCRIBE.
+    """
+    local = (locales.get(_txt(entrega)) or [{}])[0].get("local", "")
+    return f"OPL {local}" if local else cliente
+
+
 def _clave(fila: list) -> tuple[str, ...]:
     """Identidad de una línea de reingreso: cliente | fecha | entrega | sku.
 
@@ -120,9 +136,17 @@ def push_reingresos(cliente: str, fecha: dt.date, preview: list[dict]) -> int:
         return 0
 
     fecha_str = fecha.strftime("%Y-%m-%d")
+    # ⚠️ Solo afecta a lo que se empuja de ahora en adelante. Las lineas YA guardadas
+    # como 'Easy' se quedan asi a proposito: la clave (cliente|fecha|entrega|sku) es la
+    # misma que usa el GAS para saber que ya se fotografio, y reescribirlas haria que
+    # el bodeguero tenga que volver a fotografiar todo lo ya hecho.
+    try:
+        locales = read_opl()
+    except Exception:  # noqa: BLE001
+        locales = {}   # sin los locales se escribe el cliente, como siempre
     filas = [
         [
-            cliente,
+            destino_de(fila[keys["entrega"]], cliente, locales),
             fecha_str,
             str(fila[keys["entrega"]]),
             str(fila[keys["sku"]]),

@@ -50,6 +50,35 @@ def test_la_cantidad_vacia_o_rota_vale_cero_y_no_revienta():
         assert idx["100"][0]["unid"] == 0, mala
 
 
+
+
+# ── Destino del palet (lo que agrupa las fotos) ───────────────────────────────
+
+def test_el_destino_dice_a_que_opl_vuelve():
+    """La col A de 'reingresos' es la que agrupa los palets en el tablero de fotos. Si
+    todo lo de OPL dice 'Easy', el bodeguero fotografia junto lo que va al CD y lo que
+    va a cada OPL, aunque sean tres destinos distintos."""
+    from tools.push_reingresos import destino_de
+    locales = indexar_opl([fila(1880821212, 2919636302, "A", "uno", 1, local="Viña")])
+    assert destino_de("1880821212", "Easy", locales) == "OPL Viña"
+    assert destino_de("2919636302", "Easy", locales) == "OPL Viña", "por los dos codigos"
+
+
+def test_lo_que_no_es_de_opl_sigue_con_su_cliente():
+    from tools.push_reingresos import destino_de
+    locales = indexar_opl([fila(100, 200, "A", "uno", 1)])
+    assert destino_de("999", "Easy", locales) == "Easy"
+    assert destino_de("999", "Paris", locales) == "Paris"
+
+
+def test_sin_locales_no_revienta_y_queda_como_antes():
+    """Si la columna TIENDA todavia no tiene dato, se escribe el cliente de siempre."""
+    from tools.push_reingresos import destino_de
+    assert destino_de("100", "Easy", {}) == "Easy"
+    sin_tienda = indexar_opl([fila(100, 200, "A", "uno", 1, local="")])
+    assert destino_de("100", "Easy", sin_tienda) == "Easy"
+
+
 if __name__ == "__main__":
     pruebas = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for prueba in pruebas:
