@@ -2,7 +2,7 @@
 tim_easy.py
 ===========
 Genera el TIM "Devolución Logística Inversa" de Easy a partir de números de
-entrega. Fuente: BASE DE DATOS WMS (fallback BASEDATOSBEETRACK).
+entrega. Fuente: BASE DE DATOS WMS (fallback BASEDATOSBEETRACK y BASE DATOS OPL).
 
 Por cada entrega: agrupa por SKU sumando 'Unid'. Una fila por (entrega, SKU).
 Solo se rellenan columnas derivables; Motivo/Tipo/Observaciones quedan en blanco.
@@ -20,7 +20,7 @@ from io import BytesIO
 
 import openpyxl
 
-from tools.db_sources import read_wms, read_beetrack
+from tools.db_sources import read_beetrack, read_opl, read_wms
 from tools.tim_common import TEMPLATES_DIR, copy_row_style, find_header_row
 
 TEMPLATE = TEMPLATES_DIR / "tim_easy_template.xlsx"
@@ -42,11 +42,18 @@ def _aggregate(ids: list[str]):
     """Devuelve (filas, no_encontrados). filas: [{'entrega','sku','desc','un'}]."""
     wms = read_wms()
     beet = read_beetrack()
+    # Tercera fuente: los pedidos de OPL. El 'Id entrega' (col C de BASE DATOS OPL) no
+    # existe en WMS ni en Beetrack, asi que pegarlo daba "sin datos en las bases"
+    # aunque la SubOrden del MISMO pedido si se encontrara (22-10).
+    opl = read_opl()
     filas: list[dict] = []
     no_encontrados: list[str] = []
 
     for ent in ids:
-        lineas = wms.get(ent) or beet.get(ent)
+        # OPL antes que Beetrack: para un pedido de OPL, Beetrack trae el dato
+        # derivado (SKU vacio o con el otro codigo, y cantidad "0 / 1" que da 0),
+        # mientras que OPL tiene el SKU, la descripcion y las unidades de origen.
+        lineas = wms.get(ent) or opl.get(ent) or beet.get(ent)
         if not lineas:
             no_encontrados.append(ent)
             continue

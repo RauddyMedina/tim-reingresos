@@ -35,6 +35,7 @@ from tools.auth_sheets import get_service, get_sheet_id
 TAB_WMS = "BASE DE DATOS WMS"
 TAB_BEETRACK = "BASEDATOSBEETRACK"
 TAB_PARIS = "BASE DATOS PARIS"
+TAB_OPL = "BASE DATOS OPL"
 
 
 def _col(letter: str) -> int:
@@ -150,3 +151,41 @@ def clear_caches() -> None:
             fn.clear()
         except Exception:
             pass
+
+
+@_cache
+def read_opl() -> dict[str, list[dict]]:
+    """{codigo: [{'sku','desc','unid','local'}, ...]} desde BASE DATOS OPL.
+
+    Se indexa por los DOS codigos que identifican un pedido de OPL, porque el dueno
+    tiene a mano cualquiera de los dos segun de donde lo copie:
+      - col B 'Suborden'   -> es la que llega a Beetrack como orden
+      - col C 'Id entrega' -> NO existe en ninguna otra base, y por eso el generador
+                              de TIM contestaba "sin datos en las bases" (22-10).
+
+    'local' (col T) viene de la TIENDA del PDF de EasyGo: sirve para saber a que OPL
+    vuelve el reingreso.
+    """
+    # Solo se usan B, C, J, K, L y T.
+    return indexar_opl(_read_values(f"'{TAB_OPL}'!A2:T"))
+
+
+def indexar_opl(rows: list[list]) -> dict[str, list[dict]]:
+    """La parte pura de read_opl, para poder probarla sin red."""
+    iB, iC, iJ, iK, iL, iT = (_col("B"), _col("C"), _col("J"),
+                              _col("K"), _col("L"), _col("T"))
+    out: dict[str, list[dict]] = defaultdict(list)
+    for r in rows:
+        def g(i):
+            return r[i] if len(r) > i else ""
+        try:
+            unid = float(g(iL)) if str(g(iL)).strip() != "" else 0
+        except (ValueError, TypeError):
+            unid = 0
+        linea = {"sku": _norm_id(g(iJ)), "desc": str(g(iK)).strip(),
+                 "unid": unid, "local": str(g(iT)).strip()}
+        # La MISMA linea queda bajo las dos claves: pegar una u otra da el mismo TIM.
+        for clave in (_norm_id(g(iB)), _norm_id(g(iC))):
+            if clave:
+                out[clave].append(linea)
+    return dict(out)
