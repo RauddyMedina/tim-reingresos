@@ -64,19 +64,54 @@ def test_el_destino_dice_a_que_opl_vuelve():
     assert destino_de("2919636302", "Easy", locales) == "OPL Viña", "por los dos codigos"
 
 
-def test_lo_que_no_es_de_opl_sigue_con_su_cliente():
+def test_lo_que_no_sale_de_un_opl_vuelve_al_cd():
+    """Easy se escribe 'CD' porque eso es lo que es: el centro de distribucion.
+    Las filas viejas que dicen 'Easy' se quedan asi (ver push_reingresos)."""
     from tools.push_reingresos import destino_de
     locales = indexar_opl([fila(100, 200, "A", "uno", 1)])
-    assert destino_de("999", "Easy", locales) == "Easy"
+    assert destino_de("999", "Easy", locales) == "CD"
     assert destino_de("999", "Paris", locales) == "Paris"
 
 
-def test_sin_locales_no_revienta_y_queda_como_antes():
-    """Si la columna TIENDA todavia no tiene dato, se escribe el cliente de siempre."""
+def test_sin_locales_no_revienta():
+    """Si la columna TIENDA todavia no tiene dato, el reingreso es del CD."""
     from tools.push_reingresos import destino_de
-    assert destino_de("100", "Easy", {}) == "Easy"
+    assert destino_de("100", "Easy", {}) == "CD"
     sin_tienda = indexar_opl([fila(100, 200, "A", "uno", 1, local="")])
-    assert destino_de("100", "Easy", sin_tienda) == "Easy"
+    assert destino_de("100", "Easy", sin_tienda) == "CD"
+
+
+# ── El OPL escrito a mano en la descripcion del producto ──────────────────────
+
+def test_el_opl_escrito_en_la_descripcion_manda():
+    """Los cambios y retiros que salen de un OPL no estan en 'BASE DATOS OPL': el dueno
+    los marca en la descripcion del producto y esa es la unica referencia."""
+    from tools.push_reingresos import destino_de, opl_en_texto, opl_por_entrega
+    assert opl_en_texto("REFRIGERADOR 300L OPL viña") == "Viña"
+    assert opl_en_texto("PLANCHA opl-belloto") == "Belloto"
+    assert opl_en_texto("MESA DE CENTRO") == "", "no inventa un OPL donde no lo dice"
+    assert opl_en_texto("copla bellotonada") == "", "no matchea por adentro de palabras"
+
+    keys = {"entrega": "DOCUMENTO ASOCIADO", "producto": "DESCRIPCION"}
+    preview = [
+        {"DOCUMENTO ASOCIADO": "555", "DESCRIPCION": "SILLA GAMER"},
+        {"DOCUMENTO ASOCIADO": "555", "DESCRIPCION": "ESCRITORIO OPL Belloto"},
+        {"DOCUMENTO ASOCIADO": "777", "DESCRIPCION": "VELADOR"},
+    ]
+    notas = opl_por_entrega(preview, keys)
+    # Una sola linea marcada arrastra a toda la entrega: si no, el mismo pedido se
+    # partiria en dos palets segun que SKU trajera la nota.
+    assert notas == {"555": "Belloto"}, notas
+    assert destino_de("555", "Easy", {}, notas) == "OPL Belloto"
+    assert destino_de("777", "Easy", {}, notas) == "CD"
+
+
+def test_la_descripcion_le_gana_a_la_base_de_opl():
+    """Si el dueno escribio el OPL a mano es porque sabe de donde salio."""
+    from tools.push_reingresos import destino_de
+    locales = indexar_opl([fila(100, 200, "A", "uno", 1, local="Viña")])
+    assert destino_de("100", "Easy", locales, {"100": "Belloto"}) == "OPL Belloto"
+    assert destino_de("100", "Easy", locales, {}) == "OPL Viña"
 
 
 if __name__ == "__main__":

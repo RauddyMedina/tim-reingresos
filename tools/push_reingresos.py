@@ -20,6 +20,7 @@ API:
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 from tools.auth_sheets import get_service, get_sheet_id
 from tools.db_sources import read_opl
@@ -78,19 +79,56 @@ def iso_fecha(v) -> str:
     return str(v).strip()[:10]
 
 
-def destino_de(entrega, cliente: str, locales: dict) -> str:
-    """A donde vuelve el reingreso: 'OPL Vina' | 'OPL Belloto' | el cliente del TIM.
+# "OPL viña", "OPL Belloto", "opl-vina": lo que el dueno escribe a mano dentro de la
+# descripcion del producto para dejar la referencia de donde salio el cambio o retiro.
+_OPL_EN_TEXTO = re.compile(r"OPL\s*[:\-]?\s*(VI[NÑ]A|BELLOTO)", re.I)
+
+
+def opl_en_texto(texto) -> str:
+    """'Vina' | 'Belloto' | '' segun lo que diga el texto de la descripcion."""
+    m = _OPL_EN_TEXTO.search(str(texto))
+    if not m:
+        return ""
+    return "Belloto" if m.group(1).upper() == "BELLOTO" else "Viña"
+
+
+def opl_por_entrega(preview: list[dict], keys: dict) -> dict[str, str]:
+    """{entrega: local} leyendo las descripciones de los productos del preview.
+
+    Los cambios y retiros que salen de un OPL NO estan en 'BASE DATOS OPL' (el OPL no
+    los libero, los devuelve), asi que la unica referencia es la que el dueno escribe en
+    la descripcion. Una sola linea marcada vale para TODA la entrega: si no, el mismo
+    pedido se partiria en dos palets segun que SKU trajera la nota.
+    """
+    out: dict[str, str] = {}
+    for fila in preview:
+        local = opl_en_texto(fila.get(keys["producto"], ""))
+        if local:
+            out.setdefault(_txt(fila[keys["entrega"]]), local)
+    return out
+
+
+def destino_de(entrega, cliente: str, locales: dict, notas: dict | None = None) -> str:
+    """A donde vuelve el reingreso: 'OPL Vina' | 'OPL Belloto' | 'CD' | 'Paris'.
 
     La columna A de la pestana 'reingresos' es la que el tablero de fotos usa para
     AGRUPAR los palets (grupo = cliente + fecha). Si todo lo de OPL dice 'Easy', el
     bodeguero ve un solo palet que mezcla lo que vuelve al CD con lo que vuelve a cada
     OPL, y lo fotografia junto aunque sean tres destinos distintos.
 
+    `notas` (lo escrito a mano en la descripcion) le gana a 'BASE DATOS OPL': es la
+    referencia explicita de donde hay que reingresar, y es el unico dato que existe
+    para los cambios y retiros.
+
     El `cliente` que recibe push_reingresos sigue siendo Easy/Paris: eso elige que
     columnas leer del preview. Lo que cambia es lo que se ESCRIBE.
     """
-    local = (locales.get(_txt(entrega)) or [{}])[0].get("local", "")
-    return f"OPL {local}" if local else cliente
+    ident = _txt(entrega)
+    local = (notas or {}).get(ident) or (locales.get(ident) or [{}])[0].get("local", "")
+    if local:
+        return f"OPL {local}"
+    # Lo de Easy que no viene de un OPL vuelve al CD, y asi se llama en bodega.
+    return "CD" if cliente == "Easy" else cliente
 
 
 def _clave(fila: list) -> tuple[str, ...]:
@@ -144,9 +182,10 @@ def push_reingresos(cliente: str, fecha: dt.date, preview: list[dict]) -> int:
         locales = read_opl()
     except Exception:  # noqa: BLE001
         locales = {}   # sin los locales se escribe el cliente, como siempre
+    notas = opl_por_entrega(preview, keys)
     filas = [
         [
-            destino_de(fila[keys["entrega"]], cliente, locales),
+            destino_de(fila[keys["entrega"]], cliente, locales, notas),
             fecha_str,
             str(fila[keys["entrega"]]),
             str(fila[keys["sku"]]),
