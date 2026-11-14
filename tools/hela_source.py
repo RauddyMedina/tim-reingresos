@@ -49,6 +49,14 @@ def _cred(nombre: str) -> str:
         import streamlit as st
         if nombre in st.secrets:
             return str(st.secrets[nombre]).strip()
+        # ⚠️ Pegado al final del cuadro de Secrets, queda DENTRO de
+        # [gcp_service_account]: en TOML las claves que siguen a un encabezado de tabla
+        # pertenecen a esa tabla. Pasó el 14-11-2026 y desde la pantalla se ve idéntico
+        # a no haberlo configurado. Se mira un nivel más abajo antes de darlo por
+        # ausente; lo correcto sigue siendo ponerlo arriba de todo.
+        for seccion in st.secrets.values():
+            if hasattr(seccion, "get") and seccion.get(nombre):
+                return str(seccion[nombre]).strip()
     except Exception:                                             # noqa: BLE001
         pass
     if (v := os.getenv(nombre, "").strip()):

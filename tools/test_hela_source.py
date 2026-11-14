@@ -67,6 +67,34 @@ def test_lo_que_hela_no_tiene_no_inventa_una_fila():
     assert filas_de_hela(None) == [] and filas_de_hela({"detail": "Not authenticated"}) == []
 
 
+def test_la_credencial_pegada_adentro_de_otra_seccion_igual_se_encuentra():
+    """En TOML, lo que va DESPUÉS de [gcp_service_account] queda adentro de esa tabla.
+
+    El 14-11-2026 las credenciales se pegaron al final del cuadro de Secrets y la app
+    las daba por ausentes: desde la pantalla se ve idéntico a no haberlas puesto.
+    """
+    import types
+    falso = types.ModuleType("streamlit")
+    previo = sys.modules.get("streamlit")
+    try:
+        falso.secrets = {"gcp_service_account": {"client_email": "x",
+                                                 "HELA_PRUEBA": "la de adentro"}}
+        sys.modules["streamlit"] = falso
+        assert hela_source._cred("HELA_PRUEBA") == "la de adentro"
+        # y la de la raíz sigue mandando sobre la anidada
+        falso.secrets = {"HELA_PRUEBA": "la de arriba",
+                         "gcp_service_account": {"HELA_PRUEBA": "la de adentro"}}
+        assert hela_source._cred("HELA_PRUEBA") == "la de arriba"
+        # lo que no está en ningún lado sigue siendo ''
+        falso.secrets = {"gcp_service_account": {"client_email": "x"}}
+        assert hela_source._cred("HELA_PRUEBA") == ""
+    finally:
+        if previo is None:
+            sys.modules.pop("streamlit", None)
+        else:
+            sys.modules["streamlit"] = previo
+
+
 def test_sin_credenciales_no_se_consulta_nada():
     """Sin HELA_MAIL/HELA_PASS el generador tiene que seguir andando como antes."""
     hela_source._SESION = None
