@@ -22,6 +22,7 @@ import openpyxl
 from copy import copy
 
 from tools.db_sources import read_beetrack, read_opl, read_wms
+from tools.hela_source import read_hela
 from tools.tim_common import TEMPLATES_DIR, copy_row_style, find_header_row
 
 TEMPLATE = TEMPLATES_DIR / "tim_easy_template.xlsx"
@@ -47,6 +48,11 @@ def _aggregate(ids: list[str]):
     # existe en WMS ni en Beetrack, asi que pegarlo daba "sin datos en las bases"
     # aunque la SubOrden del MISMO pedido si se encontrara (22-10).
     opl = read_opl()
+    # Cuarta fuente y ULTIMA: hela, y sólo por lo que ninguna planilla encontró. Un
+    # retiro 38... nace en hela y tarda días en llegar a Beetrack (ver hela_source.py).
+    # Va al final porque es red —una llamada por número— y porque las planillas traen
+    # el dato de origen; hela es el parche para lo que todavía no bajó.
+    hela = read_hela([e for e in ids if not (wms.get(e) or opl.get(e) or beet.get(e))])
     filas: list[dict] = []
     no_encontrados: list[str] = []
 
@@ -54,7 +60,7 @@ def _aggregate(ids: list[str]):
         # OPL antes que Beetrack: para un pedido de OPL, Beetrack trae el dato
         # derivado (SKU vacio o con el otro codigo, y cantidad "0 / 1" que da 0),
         # mientras que OPL tiene el SKU, la descripcion y las unidades de origen.
-        lineas = wms.get(ent) or opl.get(ent) or beet.get(ent)
+        lineas = wms.get(ent) or opl.get(ent) or beet.get(ent) or hela.get(ent)
         if not lineas:
             no_encontrados.append(ent)
             continue

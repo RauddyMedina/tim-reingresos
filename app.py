@@ -27,6 +27,7 @@ from tools.tim_easy import build_easy
 from tools.tim_paris import build_paris
 from tools.tim_common import parse_ids
 from tools.auth_sheets import credentials_available
+from tools.hela_source import hay_credenciales as hela_configurada
 from tools.push_reingresos import push_reingresos
 from tools import db_sources
 
@@ -275,9 +276,16 @@ if res:
         no_enc = res["no_encontrados"]
 
         if no_enc:
+            # Sin credenciales, hela ni se consulta: hay que decirlo o no configurar
+            # los secrets se ve igual que un número que hela tampoco tiene.
+            falta_hela = (
+                "" if hela_configurada() else
+                "  ⚠️ hela no está configurada (faltan HELA_MAIL y HELA_PASS en los "
+                "secrets): los retiros 38… sólo se encuentran cuando bajan a Beetrack."
+            )
             st.warning(
-                f"{len(no_enc)} ID(s) sin datos en las bases (no se incluyeron): "
-                + ", ".join(no_enc)
+                f"{len(no_enc)} ID(s) sin datos en las bases ni en hela "
+                f"(no se incluyeron): " + ", ".join(no_enc) + falta_hela
             )
 
         if preview:
