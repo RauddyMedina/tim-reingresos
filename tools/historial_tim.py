@@ -38,8 +38,11 @@ from tools.auth_sheets import get_service, get_sheet_id
 from tools.push_reingresos import _KEYS
 
 TAB_HISTORIAL = "Historial_TIM"
+# ⚠️ `tipo` es el "Tipo Guia" de Paris (col C de su Excel) y va al FINAL, vacío en Easy.
+# Sin él, un TIM de Paris rearmado desde el histórico perdería esa columna. Las filas
+# escritas antes del 17-11-2026 no lo tienen: ésas se rearman con el Tipo Guia vacío.
 HEADER = ["tim_id", "generado_el", "cliente", "fecha_tim", "entrega", "sku",
-          "producto", "un"]
+          "producto", "un", "tipo"]
 
 # El contenedor de Streamlit Cloud corre en UTC: sin esto un TIM de las 21:40 queda
 # anotado a las 00:40 del día siguiente y el histórico miente justo en lo que se le
@@ -59,6 +62,7 @@ def asegurar_pestana(svc, sid: str) -> None:
     meta = svc.spreadsheets().get(spreadsheetId=sid,
                                   fields="sheets.properties.title").execute()
     if TAB_HISTORIAL in {s["properties"]["title"] for s in meta.get("sheets", [])}:
+        _emparejar_cabecera(svc, sid)
         return
     svc.spreadsheets().batchUpdate(
         spreadsheetId=sid,
@@ -70,6 +74,93 @@ def asegurar_pestana(svc, sid: str) -> None:
         valueInputOption="RAW",
         body={"values": [HEADER]},
     ).execute()
+
+
+def _emparejar_cabecera(svc, sid: str) -> None:
+    """Completa el encabezado si la pestaña se creó con menos columnas que HEADER.
+
+    Pasó el 17-11-2026 al sumar `tipo`: la pestaña ya existía con 8 columnas y, sin
+    esto, la 9ª quedaba escrita pero sin título — y al releer nadie sabría qué es.
+    Sólo agrega lo que falta al final; nunca renombra ni borra lo que ya está.
+    """
+    actual = svc.spreadsheets().values().get(
+        spreadsheetId=sid, range=f"'{TAB_HISTORIAL}'!1:1",
+    ).execute().get("values", [[]])
+    actual = actual[0] if actual else []
+    if len(actual) >= len(HEADER):
+        return
+    svc.spreadsheets().values().update(
+        spreadsheetId=sid,
+        range=f"'{TAB_HISTORIAL}'!A1:{chr(64 + len(HEADER))}1",
+        valueInputOption="RAW",
+        body={"values": [HEADER]},
+    ).execute()
+
+
+def _un(v):
+    """La cantidad como número cuando se puede: el Excel de Easy la formatea con '0'."""
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return v
+
+
+def leer_historial() -> list[dict]:
+    """Los TIM generados, del más nuevo al más viejo.
+
+    Cada uno: {'tim_id','generado_el','mes','cliente','fecha_tim','filas'}. `filas` ya
+    viene con los nombres de campo que espera el escritor de ESE cliente, así que
+    `xlsx_de` sólo tiene que elegir cuál llamar.
+    """
+    svc = get_service()
+    datos = svc.spreadsheets().values().get(
+        spreadsheetId=get_sheet_id(), range=f"'{TAB_HISTORIAL}'!A2:I",
+    ).execute().get("values", [])
+
+    tims: dict[str, dict] = {}
+    for f in datos:
+        c = [str(f[i]).strip() if i < len(f) else "" for i in range(len(HEADER))]
+        tim_id, generado_el, cliente, fecha_tim, entrega, sku, producto, un, tipo = c
+        if not tim_id:
+            continue
+        t = tims.setdefault(tim_id, {
+            "tim_id": tim_id, "generado_el": generado_el, "mes": generado_el[:7],
+            "cliente": cliente, "fecha_tim": fecha_tim, "filas": [],
+        })
+        t["filas"].append(
+            {"orden": entrega, "tipo": tipo, "sku": sku, "desc": producto}
+            if cliente == "Paris" else
+            {"entrega": entrega, "sku": sku, "desc": producto, "un": _un(un)}
+        )
+    return sorted(tims.values(), key=lambda t: t["generado_el"], reverse=True)
+
+
+def por_mes_y_cliente(tims: list[dict]) -> dict[str, dict[str, list[dict]]]:
+    """{mes: {cliente: [tim, ...]}}, que es como lo pidió el dueño. Pura, sin red."""
+    out: dict[str, dict[str, list[dict]]] = {}
+    for t in tims:
+        out.setdefault(t["mes"], {}).setdefault(t["cliente"], []).append(t)
+    return out
+
+
+def xlsx_de(tim: dict) -> bytes:
+    """Rearma el Excel de un TIM del histórico con el escritor de su cliente.
+
+    Se importa acá adentro y no arriba: así `log_tim` (que es lo que corre en cada
+    generación) no arrastra openpyxl ni las plantillas si nadie abrió el histórico.
+    """
+    fecha = dt.date.fromisoformat(tim["fecha_tim"])
+    if tim["cliente"] == "Paris":
+        from tools.tim_paris import escribir_xlsx
+    else:
+        from tools.tim_easy import escribir_xlsx
+    return escribir_xlsx(tim["filas"], fecha)
+
+
+def nombre_archivo(tim: dict) -> str:
+    """TIM_Easy_2026-11-16_214052.xlsx — la hora distingue dos del mismo día."""
+    return (f"TIM_{tim['cliente']}_{tim['fecha_tim']}_"
+            f"{tim['tim_id'].rsplit('-', 1)[-1]}.xlsx")
 
 
 def nuevo_id(cliente: str, fecha: dt.date, ahora: dt.datetime) -> str:
@@ -98,7 +189,8 @@ def filas_de(tim_id: str, generado_el: str, cliente: str, fecha: dt.date,
          str(fila.get(keys["entrega"], "")),
          str(fila.get(keys["sku"], "")),
          fila.get(keys["producto"], ""),
-         fila.get(keys["un"], "") if keys["un"] else ""]
+         fila.get(keys["un"], "") if keys["un"] else "",
+         fila.get("Tipo Guia", "")]
         for fila in preview
     ]
 

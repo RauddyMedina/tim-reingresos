@@ -341,3 +341,52 @@ if res:
                     st.error(texto)
         else:
             st.error("No se generó ninguna fila. Revisa los IDs ingresados.")
+
+
+# ── Histórico: todos los TIM generados, por mes y por cliente ──────────────────
+#
+# El Excel NO se guarda en ninguna parte: se REARMA al vuelo desde las líneas que
+# quedaron en `Historial_TIM`, con el mismo escritor que lo generó la primera vez. Por
+# eso no hace falta Drive ni almacenamiento, y por eso el archivo sale igual al de ese
+# día aunque las bases hayan cambiado desde entonces.
+#
+# Todo el bloque va dentro de un try: es una comodidad, y si el Sheet falla o el deploy
+# todavía no terminó, lo que NO puede pasar es que se caiga el generador, que es a lo
+# que la gente viene.
+with st.expander("📚 Histórico de TIM generados"):
+    try:
+        from tools.historial_tim import (leer_historial, nombre_archivo,
+                                         por_mes_y_cliente, xlsx_de)
+
+        @st.cache_data(ttl=60, show_spinner="Leyendo el histórico…")
+        def _historial():
+            return leer_historial()
+
+        if st.button("🔄 Actualizar histórico"):
+            _historial.clear()
+
+        tims = _historial()
+        if not tims:
+            st.info("Todavía no hay ningún TIM registrado.")
+        else:
+            arbol = por_mes_y_cliente(tims)
+            col_m, col_c = st.columns(2)
+            mes = col_m.selectbox("Mes", sorted(arbol, reverse=True), key="hist_mes")
+            clientes = sorted(arbol[mes])
+            cli = col_c.selectbox("Cliente", clientes, key="hist_cli")
+
+            lista = arbol[mes][cli]
+            st.caption(f"{len(lista)} TIM de {cli} en {mes}.")
+            for t in lista:
+                c1, c2 = st.columns([3, 1])
+                c1.write(f"**{t['fecha_tim']}** · generado {t['generado_el'][11:16]} h "
+                         f"· {len(t['filas'])} línea(s) · `{t['tim_id']}`")
+                # key= obligatorio: sin él, dos botones del mismo mes chocan y Streamlit
+                # sólo pinta el primero.
+                c2.download_button(
+                    "⬇️ Excel", data=xlsx_de(t), file_name=nombre_archivo(t),
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"dl_{t['tim_id']}",
+                )
+    except Exception as e:  # noqa: BLE001
+        st.warning(f"No se pudo mostrar el histórico: {e}")

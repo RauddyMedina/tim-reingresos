@@ -175,11 +175,13 @@ def _apilar(valores: list) -> str:
     return "\n".join("" if v is None else str(v) for v in valores)
 
 
-def build_easy(ids: list[str], fecha: dt.date | None = None) -> dict:
-    fecha = fecha or dt.date.today()
-    filas, no_encontrados = _aggregate(ids)
-    n_antes = len(filas)
-    filas = _merge_cambios(filas)
+def escribir_xlsx(filas: list[dict], fecha: dt.date) -> bytes:
+    """Los bytes del Excel desde las filas ya resueltas (una por producto).
+
+    Separado de `build_easy` para poder REARMAR un TIM viejo desde `Historial_TIM` sin
+    volver a leer las bases. Las bases cambian todos los dias: el historico tiene que
+    devolver el documento que se genero ESE dia, no uno nuevo con los datos de hoy.
+    """
     # El Excel lleva una fila por ENTREGA (productos apilados en la celda); el preview
     # sigue teniendo una linea por producto, que es lo que necesita el tablero de fotos.
     bloques = agrupar_por_entrega(filas)
@@ -254,8 +256,16 @@ def build_easy(ids: list[str], fecha: dt.date | None = None) -> dict:
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
+    return buf.getvalue()
+
+
+def build_easy(ids: list[str], fecha: dt.date | None = None) -> dict:
+    fecha = fecha or dt.date.today()
+    filas, no_encontrados = _aggregate(ids)
+    n_antes = len(filas)
+    filas = _merge_cambios(filas)
     return {
-        "xlsx_bytes": buf.getvalue(),
+        "xlsx_bytes": escribir_xlsx(filas, fecha),
         "preview": [
             {"N°": i + 1, "DOCUMENTO ASOCIADO": f["entrega"], "COD. PRODUCTO": f["sku"],
              "DESCRIPCION": f["desc"], "UN": f["un"]}

@@ -77,10 +77,9 @@ def _collect(ids: list[str]):
     return filas, no_encontrados
 
 
-def build_paris(ids: list[str], fecha: dt.date | None = None) -> dict:
-    fecha = fecha or dt.date.today()
-    filas, no_encontrados = _collect(ids)
-
+def escribir_xlsx(filas: list[dict], fecha: dt.date) -> bytes:
+    """Los bytes del Excel desde las filas ya resueltas. Ver `tim_easy.escribir_xlsx`:
+    existe para rearmar un TIM viejo del historico sin volver a leer BASE DATOS PARIS."""
     wb = openpyxl.load_workbook(TEMPLATE)
     ws = wb.active
 
@@ -113,8 +112,14 @@ def build_paris(ids: list[str], fecha: dt.date | None = None) -> dict:
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
+    return buf.getvalue()
+
+
+def build_paris(ids: list[str], fecha: dt.date | None = None) -> dict:
+    fecha = fecha or dt.date.today()
+    filas, no_encontrados = _collect(ids)
     return {
-        "xlsx_bytes": buf.getvalue(),
+        "xlsx_bytes": escribir_xlsx(filas, fecha),
         "preview": [
             {"N°": i + 1, "Tipo Guia": f["tipo"], "N° Guia": f["orden"],
              "Sku": f["sku"], "Desc. Sku": f["desc"]}
