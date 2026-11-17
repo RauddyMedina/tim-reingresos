@@ -29,6 +29,7 @@ from tools.tim_common import parse_ids
 from tools.auth_sheets import credentials_available
 from tools.hela_source import hay_credenciales as hela_configurada
 from tools.push_reingresos import push_reingresos
+from tools.historial_tim import log_tim
 from tools import db_sources
 
 # URL del tablero donde el bodeguero rebaja los reingresos con foto (ver proyecto_reingresos/)
@@ -181,6 +182,7 @@ def on_enviar():
     # el resultado del TIM anterior.
     st.session_state.enviado_key = None
     st.session_state.push_msg = None
+    st.session_state.hist_msg = None
     raw = st.session_state.get("ids_input", "")
     ids = parse_ids(raw)
     if not ids:
@@ -194,6 +196,19 @@ def on_enviar():
         res["cliente"] = cliente
         res["fecha"] = fecha
         st.session_state.resultado = res
+        # El histórico se escribe acá, al GENERAR, y no al descargar: este callback
+        # corre una sola vez por TIM (los reruns de Streamlit no lo vuelven a
+        # disparar) y `st.download_button` sólo avisa si alguien lo aprieta. Un TIM
+        # que se genera y no se baja igual pasó, y tiene que quedar.
+        #
+        # Con su propio try: el Excel ya está armado y es lo que el usuario vino a
+        # buscar, así que un fallo del log se avisa pero NUNCA tumba la generación.
+        try:
+            log_tim(cliente, fecha, res.get("preview") or [])
+        except Exception as e:  # noqa: BLE001
+            st.session_state.hist_msg = (
+                f"El TIM se generó igual, pero NO quedó en el histórico: {e}"
+            )
     except Exception as e:  # noqa: BLE001
         st.session_state.resultado = {"error": str(e), "trace": traceback.format_exc()}
     # Limpiar el campo (permitido dentro de un callback)
@@ -266,6 +281,8 @@ st.button("📨 Enviar ID", type="primary", on_click=on_enviar)
 
 res = st.session_state.get("resultado")
 if res:
+    if st.session_state.get("hist_msg"):
+        st.warning(st.session_state["hist_msg"])
     if res.get("error"):
         st.error(res["error"])
         if res.get("trace"):
