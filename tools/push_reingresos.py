@@ -35,34 +35,26 @@ _KEYS = {
 }
 
 
-def ensure_tab(svc, sid: str, tab: str = TAB_REINGRESOS, header: list | None = None) -> None:
-    """Crea la pestaña con su encabezado si todavía no existe.
+def _ensure_tab(svc, sid: str) -> None:
+    """Crea la pestaña `reingresos` con su encabezado si todavía no existe.
 
     Sin esto, el primer envío falla con 400 "Unable to parse range" (la pestaña
     no existe) y, si alguien la crea a mano sin encabezado, doGet() del tablero
     (que salta la fila 1 asumiendo que es header) se comería la primera línea real.
-
-    El nombre y el encabezado van por parámetro porque `historial_tim` necesita
-    exactamente esto mismo para `Historial_TIM`: una segunda copia se desincroniza
-    sola el día que alguien arregle un detalle en una de las dos.
     """
-    header = header or HEADER
     meta = svc.spreadsheets().get(spreadsheetId=sid, fields="sheets.properties.title").execute()
     titulos = {s["properties"]["title"] for s in meta.get("sheets", [])}
-    if tab in titulos:
+    if TAB_REINGRESOS in titulos:
         return
     svc.spreadsheets().batchUpdate(
         spreadsheetId=sid,
-        body={"requests": [{"addSheet": {"properties": {"title": tab}}}]},
+        body={"requests": [{"addSheet": {"properties": {"title": TAB_REINGRESOS}}}]},
     ).execute()
     svc.spreadsheets().values().update(
         spreadsheetId=sid,
-        # ponytail: techo conocido — la letra se calcula a mano y sirve hasta la Z.
-        # Estas dos pestañas tienen 6 y 8 columnas; si alguna pasara de 26, hay que
-        # pasar a un conversor de verdad (ver col() en los scripts de análisis).
-        range=f"'{tab}'!A1:{chr(64 + len(header))}1",
+        range=f"'{TAB_REINGRESOS}'!A1:F1",
         valueInputOption="RAW",
-        body={"values": [header]},
+        body={"values": [HEADER]},
     ).execute()
 
 
@@ -205,7 +197,7 @@ def push_reingresos(cliente: str, fecha: dt.date, preview: list[dict]) -> int:
 
     svc = get_service()
     sid = get_sheet_id()
-    ensure_tab(svc, sid)
+    _ensure_tab(svc, sid)
 
     # ponytail: leer-y-después-escribir no es atómico. Dos envíos exactamente
     # simultáneos (dos pestañas del navegador) podrían pasar los dos el filtro y

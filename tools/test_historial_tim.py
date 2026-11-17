@@ -17,8 +17,7 @@ if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
 from tools import historial_tim as HT  # noqa: E402
-from tools.historial_tim import HEADER, filas_de, nuevo_id  # noqa: E402
-from tools.push_reingresos import ensure_tab  # noqa: E402
+from tools.historial_tim import HEADER, asegurar_pestana, filas_de, nuevo_id  # noqa: E402
 
 FECHA = dt.date(2026, 11, 16)
 AHORA = dt.datetime(2026, 11, 16, 21, 40, 52)
@@ -94,7 +93,11 @@ def test_generar_dos_veces_deja_DOS_registros():
 
 
 def test_la_pestana_se_crea_con_sus_8_columnas():
-    """ensure_tab calcula la letra del encabezado: con 8 columnas es A1:H1, no A1:F1."""
+    """El encabezado llega hasta H: son 8 columnas, no las 6 de `reingresos`.
+
+    Y de paso deja clavado que `historial_tim` crea su pestaña SOLO, sin pedirle nada
+    nuevo a push_reingresos: ese import tumbó la app entera el 16-11-2026.
+    """
     rangos = []
 
     class FakeValues:
@@ -129,11 +132,11 @@ def test_la_pestana_se_crea_con_sus_8_columnas():
         def spreadsheets(self):
             return FakeSheets(self.existe)
 
-    ensure_tab(FakeSvc(False), "sid", HT.TAB_HISTORIAL, HEADER)
+    asegurar_pestana(FakeSvc(False), "sid")
     assert rangos == [f"'{HT.TAB_HISTORIAL}'!A1:H1"], rangos
     # y si ya existe no la vuelve a tocar (borraría el encabezado y las filas de abajo
     # quedarían corridas al leerlas)
-    ensure_tab(FakeSvc(True), "sid", HT.TAB_HISTORIAL, HEADER)
+    asegurar_pestana(FakeSvc(True), "sid")
     assert len(rangos) == 1, rangos
 
 

@@ -30,7 +30,12 @@ import datetime as dt
 from zoneinfo import ZoneInfo
 
 from tools.auth_sheets import get_service, get_sheet_id
-from tools.push_reingresos import _KEYS, ensure_tab
+# Sólo `_KEYS`, que ya existía. ⚠️ **No pedirle a push_reingresos un nombre NUEVO**:
+# Streamlit Cloud recarga el script pero deja los módulos ya importados en sys.modules,
+# así que al desplegar los dos juntos el 16-11-2026 este import se encontró con la copia
+# VIEJA de push_reingresos y tumbó la app entera con un ImportError (la pantalla roja que
+# vio el dueño). Se arregla con un Reboot, pero el app no puede depender de eso.
+from tools.push_reingresos import _KEYS
 
 TAB_HISTORIAL = "Historial_TIM"
 HEADER = ["tim_id", "generado_el", "cliente", "fecha_tim", "entrega", "sku",
@@ -40,6 +45,31 @@ HEADER = ["tim_id", "generado_el", "cliente", "fecha_tim", "entrega", "sku",
 # anotado a las 00:40 del día siguiente y el histórico miente justo en lo que se le
 # pregunta (a qué hora se generó y de qué día es).
 TZ = ZoneInfo("America/Santiago")
+
+
+def asegurar_pestana(svc, sid: str) -> None:
+    """Crea `Historial_TIM` con su encabezado si todavía no existe.
+
+    ponytail: sí, push_reingresos tiene su propia versión de esto para `reingresos`.
+    La copia es a propósito y es el precio de no acoplar los dos módulos en el deploy
+    (ver el comentario del import). Son 10 líneas y las dos pestañas son fijas; si
+    alguna vez hay una tercera, ahí sí conviene un módulo aparte que las dos importen
+    desde el primer despliegue.
+    """
+    meta = svc.spreadsheets().get(spreadsheetId=sid,
+                                  fields="sheets.properties.title").execute()
+    if TAB_HISTORIAL in {s["properties"]["title"] for s in meta.get("sheets", [])}:
+        return
+    svc.spreadsheets().batchUpdate(
+        spreadsheetId=sid,
+        body={"requests": [{"addSheet": {"properties": {"title": TAB_HISTORIAL}}}]},
+    ).execute()
+    svc.spreadsheets().values().update(
+        spreadsheetId=sid,
+        range=f"'{TAB_HISTORIAL}'!A1:{chr(64 + len(HEADER))}1",
+        valueInputOption="RAW",
+        body={"values": [HEADER]},
+    ).execute()
 
 
 def nuevo_id(cliente: str, fecha: dt.date, ahora: dt.datetime) -> str:
@@ -84,7 +114,7 @@ def log_tim(cliente: str, fecha: dt.date, preview: list[dict],
 
     svc = get_service()
     sid = get_sheet_id()
-    ensure_tab(svc, sid, TAB_HISTORIAL, HEADER)
+    asegurar_pestana(svc, sid)
     # RAW y no USER_ENTERED por lo mismo que push_reingresos: así la fecha queda como
     # texto '2026-11-16' y no como fecha que al releerla vuelve con el formato del
     # locale de la planilla.
