@@ -1,3 +1,12 @@
+# La version va FIJA: Cloud reinstala las dependencias cada vez que la app duerme y
+# despierta, y con un rango se bajaba otra version que reescribia los .js del frontend
+# con otro hash -> la pestana que alguien dejo abierta reventaba al pintar una tabla.
+# Subir de version = cambiar esta linea a proposito.
+#
+# Tocar este archivo tambien sirve para FORZAR un arranque limpio: tras un deploy, Cloud
+# a veces recarga el script pero deja los modulos ya importados en sys.modules, y la app
+# sigue corriendo el codigo viejo (18-11-2026: el formato nuevo no entraba ni a los 8
+# minutos). Cambiar requirements obliga a reinstalar y levantar el proceso de cero.
 streamlit==1.66.1
 google-api-python-client>=2.100
 google-auth>=2.30
