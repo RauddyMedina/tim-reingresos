@@ -23,6 +23,29 @@ assert f["sku"] == "1351417"  # sku de la ENTREGA, no del retiro
 assert f["un"] == 1  # un de la ENTREGA
 assert f["desc"] == "CAMBIO COMEDOR 8S CLARICE 136X136X77 (2918619547)"  # desc del RETIRO
 
+# Cambio SIN el (N°) en el nombre: se empareja por el SKU. Caso real del TIM del 14-11
+# (retiro 385622746 + entrega 2919978013, los dos del SKU 1488002), que salia en dos
+# lineas aunque es un solo cambio.
+sin_ref = [
+    {"entrega": "2919978013", "sku": "1488002",
+     "desc": "REFRIGERADOR BOTTOM FREEZER MED270B", "un": 1},
+    {"entrega": "385622746", "sku": "1488002",
+     "desc": "CAMBIO REFRIGERADOR BOTTOM FREEZER MED270B", "un": 1},
+]
+out_sr = _merge_cambios(sin_ref)
+assert len(out_sr) == 1, f"el cambio tiene que quedar en UNA linea, hay {len(out_sr)}"
+assert out_sr[0]["entrega"] == "2919978013 - 385622746", out_sr[0]["entrega"]
+
+# Dos entregas del MISMO producto: no se adivina cual, quedan sueltas.
+ambiguo = [
+    {"entrega": "2919978013", "sku": "1488002", "desc": "REFRIGERADOR", "un": 1},
+    {"entrega": "2919978099", "sku": "1488002", "desc": "REFRIGERADOR", "un": 1},
+    {"entrega": "385622746", "sku": "1488002", "desc": "CAMBIO REFRIGERADOR", "un": 1},
+]
+assert len(_merge_cambios(ambiguo)) == 3, "con dos candidatas no debe fusionar"
+
+print("OK - emparejado por SKU cuando no hay (N°) en el nombre")
+
 # Retiro auto-referenciado (referencia su propio N°, no una entrega distinta): NO fusiona.
 filas2 = [{"entrega": "385564520", "sku": "385564520",
            "desc": "CAMBIO SOFA CAMA FELICITAS 145X77X86 GRIS (385564520)", "un": 1}]

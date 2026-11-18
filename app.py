@@ -252,8 +252,10 @@ def on_push():
 cliente = st.radio("Cliente", ["Easy", "Paris"], horizontal=True, key="cliente")
 
 ayuda = {
-    "Easy": "Pega los **DOCUMENTO ASOCIADO** (entregas). Se completan COD. PRODUCTO, "
-            "DESCRIPCION y UN. Motivo, Tipo y Observaciones se llenan a mano.",
+    "Easy": "Pega las **entregas** (29…) y los **retiros** (38…). Se completan Tipo "
+            "Devolución, ID Entrega, ID retiro, Cód. Producto, Descripción y Unid; el "
+            "cambio sale en una sola línea. **Motivo reingreso** y **¿Cobro?** quedan "
+            "con su lista desplegable para llenarlos a mano.",
     "Paris": "Pega los **N° de Guía** (Orden). Se completan Tipo Guía, Sku y Desc. Sku. "
              "El resto del formato se llena a mano.",
 }
