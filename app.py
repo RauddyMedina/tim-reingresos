@@ -53,7 +53,12 @@ st.markdown(
     background-size: 40px 40px, 40px 40px, 100% 3px;
     color: #c8d3f5 !important;
   }
-  .stApp, .stApp p, .stApp label, .stApp span, .stApp div {
+  /* ⚠️ SIN `span`: los iconos de Streamlit son LIGADURAS de Material Symbols, o sea
+     texto ("keyboard_arrow_right") que la fuente dibuja como el simbolo. `.stApp span`
+     le ganaba en especificidad a la regla de Streamlit y el navegador escribia el
+     NOMBRE del icono encima del titulo (se veia en el desplegable del historico y en
+     los botones). Los span de texto normal igual heredan la fuente del contenedor. */
+  .stApp, .stApp p, .stApp label, .stApp div {
     font-family: 'Share Tech Mono', monospace;
   }
   [data-testid="stHeader"] { background: transparent !important; }
