@@ -57,7 +57,42 @@ TIPO_CAMBIO, TIPO_RETIRO, TIPO_ENTREGA = "ER", "Retiro", "Entrega"
 # "ID asociado al pedido (29 para entregas - 38 para retiros)", dice el instructivo.
 PREFIJO_RETIRO = "38"
 
-TRANSPORTE = "E&S Transportes"
+TRANSPORTE = "Transportes Yañez"
+
+# El subestado de Beetrack (col J) dice por qué volvió el pedido, así que el Motivo de un
+# reingreso de ENTREGA se puede adelantar. Sólo se traduce lo que calza con un motivo del
+# formato sin interpretar nada: el resto queda en blanco con su desplegable, porque un
+# motivo inventado viaja a Cencosud dentro de un reclamo.
+#
+# Lo que NO se traduce, y por qué (medido sobre las 92.644 filas de Easy del Sheet):
+#   Despacho Adelantado (2.713), Reprogramado (812), Reingresado CD Cliente (984),
+#   Producto faltante/incompleto/no corresponde, Diferencias de Formulario,
+#   Incumplimiento de Transporte, Rechazado en Origen, Fuera de Cobertura,
+#   Domicilio no cumple condiciones de entrega  -> ninguno es uno de los cinco motivos.
+# Y 'Reingreso solicitado por Easy' no tiene subestado que lo represente.
+MOTIVOS_POR_SUBESTADO = {
+    "cliente anula": "Cliente anula",
+    "sin moradores": "Sin moradores 3 intentos",
+    "direccion no encontrada": "Dirección o domicilio no corresponde",
+    "direccion erronea": "Dirección o domicilio no corresponde",
+    "rechazo por dano": "Cliente rechaza por daño",
+}
+
+
+def _sin_tildes(s: str) -> str:
+    tabla = str.maketrans("áéíóúüñÁÉÍÓÚÜÑ", "aeiouunAEIOUUN")
+    return str(s or "").strip().lower().translate(tabla)
+
+
+def motivo_reingreso(tipo: str, subestado: str) -> str:
+    """El Motivo que se puede dar por sabido, o '' para que lo elijan a mano.
+
+    Sólo para `Entrega`: en un ER o un Retiro el motivo es el ESTADO FÍSICO del producto
+    (Abollado, Quebrado…), que se ve en el andén y no está en ninguna base.
+    """
+    if tipo != TIPO_ENTREGA:
+        return ""
+    return MOTIVOS_POR_SUBESTADO.get(_sin_tildes(subestado), "")
 
 
 def _aggregate(ids: list[str]):
@@ -68,19 +103,29 @@ def _aggregate(ids: list[str]):
     # existe en WMS ni en Beetrack, asi que pegarlo daba "sin datos en las bases"
     # aunque la SubOrden del MISMO pedido si se encontrara (22-10).
     opl = read_opl()
-    # Cuarta fuente y ULTIMA: hela, y sólo por lo que ninguna planilla encontró. Un
-    # retiro 38... nace en hela y tarda días en llegar a Beetrack (ver hela_source.py).
-    # Va al final porque es red —una llamada por número— y porque las planillas traen
-    # el dato de origen; hela es el parche para lo que todavía no bajó.
-    hela = read_hela([e for e in ids if not (wms.get(e) or opl.get(e) or beet.get(e))])
+    # OPL antes que Beetrack: para un pedido de OPL, Beetrack trae el dato derivado (SKU
+    # vacio o con el otro codigo, y cantidad "0 / 1" que da 0), mientras que OPL tiene el
+    # SKU, la descripcion y las unidades de origen.
+    planilla = {e: (wms.get(e) or opl.get(e) or beet.get(e)) for e in ids}
+
+    # ⚠️ Beetrack deja el N° de la PROPIA orden en la columna del SKU cuando el pedido es
+    # un retiro: 385618138 sale con sku 385618138, y el SKU de verdad (1306275) sólo lo
+    # tiene hela. Sin esto la columna 'Cód. Producto' del TIM repetía el N° de retiro.
+    sin_sku = [e for e in ids if planilla[e]
+               and all(str(ln["sku"]).strip() == e for ln in planilla[e])]
+    # hela: por lo que ninguna planilla encontró (un retiro 38... nace ahí y tarda días
+    # en llegar a Beetrack) y por lo que llegó sin SKU. Va al final porque es red —una
+    # llamada por número— y porque las planillas traen el dato de origen.
+    hela = read_hela([e for e in ids if not planilla[e]] + sin_sku)
+    # El "por qué volvió" sale de Beetrack aunque el producto lo haya puesto otra base:
+    # un pedido reingresado está en Beetrack con su subestado, pero sus líneas suelen
+    # venir del WMS, que gana en la prioridad de arriba.
+    subestados = {e: (ls[0].get("subestado") or "") for e, ls in beet.items() if ls}
     filas: list[dict] = []
     no_encontrados: list[str] = []
 
     for ent in ids:
-        # OPL antes que Beetrack: para un pedido de OPL, Beetrack trae el dato
-        # derivado (SKU vacio o con el otro codigo, y cantidad "0 / 1" que da 0),
-        # mientras que OPL tiene el SKU, la descripcion y las unidades de origen.
-        lineas = wms.get(ent) or opl.get(ent) or beet.get(ent) or hela.get(ent)
+        lineas = (hela.get(ent) if ent in sin_sku else None) or planilla[ent] or hela.get(ent)
         if not lineas:
             no_encontrados.append(ent)
             continue
@@ -102,6 +147,7 @@ def _aggregate(ids: list[str]):
                 "sku": sku,
                 "desc": agg[sku]["desc"],
                 "un": int(un) if float(un).is_integer() else un,
+                "subestado": subestados.get(ent, ""),
             })
     return filas, no_encontrados
 
@@ -207,8 +253,8 @@ def agrupar_por_entrega(filas: list[dict]) -> list[dict]:
     out: dict[str, dict] = {}
     for f in filas:
         ent = str(f["entrega"])
-        b = out.setdefault(ent, {"entrega": f["entrega"], "skus": [],
-                                 "descs": [], "uns": []})
+        b = out.setdefault(ent, {"entrega": f["entrega"], "skus": [], "descs": [],
+                                 "uns": [], "subestado": f.get("subestado", "")})
         b["skus"].append(f["sku"])
         b["descs"].append(f["desc"])
         b["uns"].append(f["un"])
@@ -396,9 +442,12 @@ def escribir_xlsx(filas: list[dict], fecha: dt.date, transporte: str = TRANSPORT
     for i, b in enumerate(bloques):
         r = FILA_1 + i
         entrega, retiro = partir_documento(b["entrega"])
+        tipo = tipo_devolucion(entrega, retiro)
         n = len(b["skus"])
         celdas[f"{COL_N}{r}"] = (i + 1, True, None)
-        celdas[f"{COL_TIPO}{r}"] = (tipo_devolucion(entrega, retiro), False, None)
+        celdas[f"{COL_TIPO}{r}"] = (tipo, False, None)
+        celdas[f"{COL_MOTIVO}{r}"] = (motivo_reingreso(tipo, b.get("subestado", "")),
+                                      False, None)
         celdas[f"{COL_ENTREGA}{r}"] = celda(entrega)
         celdas[f"{COL_RETIRO}{r}"] = celda(retiro)
         celdas[f"{COL_SKU}{r}"] = celda(_apilar(b["skus"]) if n > 1 else b["skus"][0])

@@ -95,10 +95,14 @@ def read_beetrack() -> dict[str, list[dict]]:
     """{entrega: [{'sku','desc','unid'}, ...]} desde BASEDATOSBEETRACK (fallback Easy).
 
     Clave: col A (Orden). SKU=AJ, Desc=AK, Qty=AL (formato "N / N" → primer número).
+
+    Cada línea trae además el **subestado** (col J): es el "por qué volvió" del pedido, lo
+    único que permite adelantar el Motivo del TIM. Viaja acá y no en su propia función
+    porque ya está dentro del rango que se lee: sacarlo aparte serían 92 mil filas más.
     """
-    # Solo se usan A, AJ, AK, AL → leer hasta AL (recortar a la derecha reduce memoria/payload).
+    # Solo se usan A, J, AJ, AK, AL → leer hasta AL (recortar a la derecha reduce memoria).
     rows = _read_values(f"'{TAB_BEETRACK}'!A2:AL")
-    iE, iAJ, iAK, iAL = _col("A"), _col("AJ"), _col("AK"), _col("AL")
+    iE, iJ, iAJ, iAK, iAL = _col("A"), _col("J"), _col("AJ"), _col("AK"), _col("AL")
     out: dict[str, list[dict]] = defaultdict(list)
     for r in rows:
         def g(i):
@@ -116,6 +120,7 @@ def read_beetrack() -> dict[str, list[dict]]:
             "sku": _norm_id(g(iAJ)),
             "desc": str(g(iAK)).strip(),
             "unid": unid,
+            "subestado": str(g(iJ)).strip(),
         })
     return dict(out)
 
